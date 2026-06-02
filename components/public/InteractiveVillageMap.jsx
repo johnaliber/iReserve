@@ -1,0 +1,738 @@
+'use client';
+
+import React, { useRef, useState, useEffect, useCallback } from 'react';
+import dynamic from 'next/dynamic';
+import { createClient } from '@/lib/supabase/client';
+import PropertyDetailModal from './PropertyDetailModal';
+import { 
+  Loader2, 
+  Layers, 
+  SlidersHorizontal, 
+  Map, 
+  Coins, 
+  Compass, 
+  ShieldAlert, 
+  Sun, 
+  Search,
+  Sparkles,
+  HelpCircle,
+  Play,
+  ArrowRight
+} from 'lucide-react';
+import Link from 'next/link';
+
+// Synchronous react-konva imports, component is loaded dynamically by parent pages to avoid SSR issues
+import { Stage, Layer, Line, Circle, Rect, Text, Group } from 'react-konva';
+
+
+export default function InteractiveVillageMap({ villageSlug, onPropertySelect, hideSidebar = false }) {
+  const supabase = createClient();
+  const stageRef = useRef(null);
+
+  // States
+  const [loading, setLoading] = useState(true);
+  const [village, setVillage] = useState(null);
+  const [objects, setObjects] = useState([]);
+  const [properties, setProperties] = useState([]);
+  const [zoom, setZoom] = useState(0.85);
+
+  // Overlays
+  const [layers, setLayers] = useState({
+    roads: true,
+    lots: true,
+    amenities: true,
+    flood: true,
+    sunlight: true
+  });
+
+  // Modal / Detail state
+  const [selectedProperty, setSelectedProperty] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Filters State
+  const [statusFilter, setStatusFilter] = useState('');
+  const [maxPrice, setMaxPrice] = useState(10000000);
+  const [minRooms, setMinRooms] = useState(0);
+  const [floodRiskFilter, setFloodRiskFilter] = useState('');
+
+  // Recommendation Engine State
+  const [showRecommendation, setShowRecommendation] = useState(false);
+  const [recBudget, setRecBudget] = useState(5000000);
+  const [recRooms, setRecRooms] = useState(3);
+  const [recParking, setRecParking] = useState(1);
+  const [recFloodPreference, setRecFloodPreference] = useState('low'); // prefer low risk
+  const [recSunlightPreference, setRecSunlightPreference] = useState('morning');
+  const [recommendations, setRecommendations] = useState([]);
+
+  const fetchMapData = useCallback(async () => {
+    setLoading(true);
+    try {
+      // 1. Fetch village
+      const { data: v, error: vError } = await supabase
+        .from('villages')
+        .select('*')
+        .eq('slug', villageSlug)
+        .single();
+
+      if (vError || !v) {
+        console.warn('Village not found in database, loading mock data templates for preview.');
+        setVillage({
+          id: 'mock-1',
+          name: villageSlug === 'teal-lagoon' ? 'Teal Lagoon Residences' : 'Emerald Ridge Heights',
+          slug: villageSlug,
+          city: 'Tagaytay',
+          province: 'Cavite'
+        });
+        setObjects(getMockObjects('mock-1'));
+        setLoading(false);
+        return;
+      }
+      
+      setVillage(v);
+
+      // 2. Fetch published blueprint
+      const { data: bp } = await supabase
+        .from('blueprints')
+        .select('id')
+        .eq('village_id', v.id)
+        .eq('status', 'published')
+        .single();
+
+      // 3. Fetch properties
+      const { data: props } = await supabase
+        .from('properties')
+        .select('*')
+        .eq('village_id', v.id);
+
+      const loadedProps = props || [];
+      setProperties(loadedProps);
+
+      if (bp) {
+        // 4. Fetch blueprint objects
+        const { data: objs } = await supabase
+          .from('blueprint_objects')
+          .select('*')
+          .eq('blueprint_id', bp.id);
+
+        setObjects(objs || []);
+      } else {
+        // Fallback demo elements if no blueprints exist yet
+        setObjects(getMockObjects(v.id));
+      }
+
+    } catch (err) {
+      console.error('Error loading interactive map data:', err);
+      // Robust recovery fallback state
+      setVillage({
+        id: 'mock-1',
+        name: 'Emerald Ridge Heights',
+        slug: villageSlug,
+        city: 'Tagaytay',
+        province: 'Cavite'
+      });
+      setObjects(getMockObjects('mock-1'));
+    } finally {
+      setLoading(false);
+    }
+  }, [villageSlug, supabase]);
+
+  useEffect(() => {
+    if (villageSlug) {
+      fetchMapData();
+    }
+  }, [villageSlug, fetchMapData]);
+
+
+
+
+  // Helper properties list if none are configured in database
+  const getDisplayedProperties = () => {
+    if (properties.length > 0) return properties;
+    return [
+      { id: 'mock-prop-1', property_code: 'ERR-B1L1', block_number: '1', lot_number: '1', price: 4500000, reservation_fee: 5000, lot_size: 120, floor_area: 85, bedrooms: 3, bathrooms: 2, parking_slots: 1, orientation: 'East', flood_risk: 'low', sunlight_exposure: 'morning', status: 'available' },
+      { id: 'mock-prop-2', property_code: 'ERR-B1L2', block_number: '1', lot_number: '2', price: 4200000, reservation_fee: 5000, lot_size: 110, floor_area: 75, bedrooms: 2, bathrooms: 1, parking_slots: 1, orientation: 'East', flood_risk: 'medium', sunlight_exposure: 'balanced', status: 'reserved' },
+      { id: 'mock-prop-3', property_code: 'ERR-B1L3', block_number: '1', lot_number: '3', price: 4800000, reservation_fee: 5000, lot_size: 130, floor_area: 95, bedrooms: 3, bathrooms: 3, parking_slots: 2, orientation: 'West', flood_risk: 'low', sunlight_exposure: 'afternoon', status: 'sold' }
+    ];
+  };
+
+  const displayedProps = getDisplayedProperties();
+
+  // Find dynamic property status color mapping
+  const getLotFillColor = (linkedPropId, defaultFill) => {
+    if (!linkedPropId) return defaultFill || '#64748b'; // gray if unlinked
+    
+    const prop = displayedProps.find(p => p.id === linkedPropId);
+    if (!prop) return defaultFill || '#64748b';
+
+    switch (prop.status) {
+      case 'available': return '#10b981'; // Green
+      case 'reserved': return '#f59e0b'; // Amber
+      case 'sold': return '#ef4444'; // Red
+      case 'under_maintenance': return '#64748b'; // Gray
+      default: return '#3b82f6'; // Blue for Viewing
+    }
+  };
+
+  const handleLotClick = (linkedPropId) => {
+    if (!linkedPropId) return;
+    if (onPropertySelect) {
+      onPropertySelect(linkedPropId);
+      return;
+    }
+    const prop = displayedProps.find(p => p.id === linkedPropId);
+    if (prop) {
+      setSelectedProperty(prop);
+      setIsModalOpen(true);
+    }
+  };
+
+  // 1. FILTERING SYSTEM
+  const filteredProps = displayedProps.filter((p) => {
+    if (statusFilter && p.status !== statusFilter) return false;
+    if (p.price > maxPrice) return false;
+    if (minRooms > 0 && p.bedrooms < minRooms) return false;
+    if (floodRiskFilter && p.flood_risk !== floodRiskFilter) return false;
+    return true;
+  });
+
+  // 2. RULE-BASED PROPERTY RECOMMENDATION ENGINE
+  const handleCalculateRecommendations = () => {
+    const scores = displayedProps
+      .filter(p => p.status === 'available')
+      .map((p) => {
+        let score = 100;
+
+        // A. Match budget (subtract 30 points if over budget, otherwise score depends on proximity)
+        if (p.price > recBudget) {
+          score -= 35;
+        } else {
+          // Bonus score if it is within budget
+          score += 10;
+        }
+
+        // B. Match rooms (within 1 room is fine, exact match gets bonus)
+        if (p.bedrooms === recRooms) {
+          score += 15;
+        } else if (Math.abs(p.bedrooms - recRooms) === 1) {
+          score += 5;
+        } else {
+          score -= 20;
+        }
+
+        // C. Match parking
+        if (p.parking_slots >= recParking) {
+          score += 10;
+        } else {
+          score -= 15;
+        }
+
+        // D. Match flood risk tolerance
+        if (p.flood_risk === recFloodPreference) {
+          score += 15;
+        } else if (p.flood_risk === 'high' && recFloodPreference === 'low') {
+          score -= 30; // severe penalty
+        }
+
+        // E. Match sunlight exposure
+        if (p.sunlight_exposure === recSunlightPreference) {
+          score += 10;
+        }
+
+        return {
+          property: p,
+          score: Math.max(0, Math.min(100, score))
+        };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3); // Top 3 recommendations
+
+    setRecommendations(scores);
+  };
+
+  const handleStageWheel = (e) => {
+    e.evt.preventDefault();
+    const stage = stageRef.current;
+    if (!stage) return;
+
+    const scaleBy = 1.05;
+    const oldScale = stage.scaleX();
+    const newScale = e.evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy;
+    const clampedScale = Math.max(0.3, Math.min(3, newScale));
+
+    setZoom(clampedScale);
+    stage.scale({ x: clampedScale, y: clampedScale });
+    stage.batchDraw();
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[500px] text-slate-400">
+        <Loader2 className="w-10 h-10 text-emerald-400 animate-spin mb-4" />
+        <span className="text-sm font-semibold uppercase tracking-wider">Loading subdivision map...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col lg:flex-row gap-6 items-stretch relative min-h-[calc(100vh-80px)] w-full">
+      
+      {/* 1. Left Column: Map legend, Filters, and Recommendations */}
+      {!hideSidebar && (
+        <div className="w-full lg:w-80 flex flex-col gap-6 flex-shrink-0">
+        
+        {/* Map Legend */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg glass-card select-none">
+          <h4 className="text-xs font-bold text-slate-350 uppercase tracking-wider mb-4 border-b border-slate-800 pb-2">
+            Status Legend
+          </h4>
+          <div className="grid grid-cols-2 gap-3 text-xs font-medium">
+            <div className="flex items-center gap-2">
+              <span className="w-3.5 h-3.5 bg-emerald-500 rounded-lg shadow-inner" />
+              <span>Available</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3.5 h-3.5 bg-amber-500 rounded-lg shadow-inner" />
+              <span>Reserved</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3.5 h-3.5 bg-red-500 rounded-lg shadow-inner" />
+              <span>Sold</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3.5 h-3.5 bg-slate-500 rounded-lg shadow-inner" />
+              <span>Maintenance</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Dynamic Filters */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg glass-card">
+          <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-2">
+            <h4 className="text-xs font-bold text-slate-350 uppercase tracking-wider flex items-center gap-1.5">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-400" />
+              Blueprint Filters
+            </h4>
+            {showRecommendation && (
+              <button 
+                onClick={() => setShowRecommendation(false)}
+                className="text-[10px] text-emerald-400 font-semibold hover:underline cursor-pointer"
+              >
+                Normal Filter
+              </button>
+            )}
+          </div>
+
+          {!showRecommendation ? (
+            <div className="space-y-4 text-xs font-medium">
+              <div>
+                <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Status</label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 outline-none text-slate-350 cursor-pointer"
+                >
+                  <option value="">All Statuses</option>
+                  <option value="available">Available (Green)</option>
+                  <option value="reserved">Reserved (Yellow)</option>
+                  <option value="sold">Sold (Red)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Max Budget</label>
+                <select
+                  value={maxPrice}
+                  onChange={(e) => setMaxPrice(parseInt(e.target.value))}
+                  className="w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 outline-none text-slate-350 cursor-pointer"
+                >
+                  <option value={10000000}>₱10,000,000 max</option>
+                  <option value={6000000}>₱6,000,000 max</option>
+                  <option value={4500000}>₱4,500,000 max</option>
+                  <option value={3800000}>₱3,800,000 max</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Min Bedrooms</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={minRooms}
+                  onChange={(e) => setMinRooms(parseInt(e.target.value) || 0)}
+                  className="w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 outline-none text-slate-300"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Flood risk</label>
+                <select
+                  value={floodRiskFilter}
+                  onChange={(e) => setFloodRiskFilter(e.target.value)}
+                  className="w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 outline-none text-slate-350 cursor-pointer"
+                >
+                  <option value="">Any Risk Level</option>
+                  <option value="low">Low Risk</option>
+                  <option value="medium">Medium Risk</option>
+                </select>
+              </div>
+
+              <button
+                onClick={() => setShowRecommendation(true)}
+                className="w-full flex items-center justify-center gap-1.5 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white py-2.5 rounded-xl text-xs font-semibold shadow transition cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                Launch Smart Assistant
+              </button>
+            </div>
+          ) : (
+            /* AI / Rule-based Assistant Panel */
+            <div className="space-y-4 text-xs font-medium">
+              <div>
+                <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Preferred Budget</label>
+                <input
+                  type="range"
+                  min="3000000"
+                  max="8000000"
+                  step="500000"
+                  value={recBudget}
+                  onChange={(e) => setRecBudget(parseInt(e.target.value))}
+                  className="w-full h-1 bg-slate-950 rounded-lg appearance-none cursor-pointer outline-none"
+                />
+                <span className="text-[10px] text-slate-400 block text-right mt-1">₱{recBudget.toLocaleString()}</span>
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Ideal BedRooms</label>
+                <select
+                  value={recRooms}
+                  onChange={(e) => setRecRooms(parseInt(e.target.value))}
+                  className="w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 outline-none text-slate-350 cursor-pointer"
+                >
+                  <option value={2}>2 Bedrooms</option>
+                  <option value={3}>3 Bedrooms</option>
+                  <option value={4}>4 Bedrooms</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Flood risk Tolerance</label>
+                <select
+                  value={recFloodPreference}
+                  onChange={(e) => setRecFloodPreference(e.target.value)}
+                  className="w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 outline-none text-slate-350 cursor-pointer"
+                >
+                  <option value="low">Must be Low Risk (Recommended)</option>
+                  <option value="medium">Medium is Acceptable</option>
+                </select>
+              </div>
+
+              <button
+                onClick={handleCalculateRecommendations}
+                className="w-full flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-bold py-2.5 rounded-xl text-xs shadow transition cursor-pointer"
+              >
+                Find Ideal Coordinates
+              </button>
+
+              {/* Recommendations list */}
+              {recommendations.length > 0 && (
+                <div className="space-y-2 pt-3 border-t border-slate-800">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block mb-1">Matching Lots:</span>
+                  {recommendations.map(({ property, score }) => (
+                    <div
+                      key={property.id}
+                      onClick={() => handleLotClick(property.id)}
+                      className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-900 hover:border-emerald-500/20 transition cursor-pointer flex justify-between items-center"
+                    >
+                      <div>
+                        <span className="font-bold text-slate-200 block text-[11px]">{property.property_code}</span>
+                        <span className="text-[10px] text-slate-500">Block {property.block_number} Lot {property.lot_number}</span>
+                      </div>
+                      <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
+                        {score}% Match
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      )}
+
+      {/* 2. Right Column: Konva stage viewport */}
+      <div className="flex-1 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden relative shadow-inner min-h-[500px]">
+        {/* Layer Visibility Overrides Controls inside the Stage */}
+        <div className="absolute top-4 left-4 z-10 bg-slate-950/80 border border-slate-850 p-2 rounded-xl flex items-center gap-2 text-xs select-none glass-card font-medium">
+          <Layers className="w-3.5 h-3.5 text-emerald-400" />
+          <span className="text-slate-500 font-semibold mr-2 uppercase text-[9px] tracking-wider">Layers:</span>
+          
+          <button
+            onClick={() => setLayers({ ...layers, flood: !layers.flood })}
+            className={`px-2 py-1 rounded-lg border transition text-[10px] font-bold cursor-pointer ${layers.flood ? 'bg-rose-500/10 border-rose-500/20 text-rose-400' : 'bg-transparent border-transparent text-slate-600 hover:text-slate-400'}`}
+          >
+            Flood Risk
+          </button>
+          
+          <button
+            onClick={() => setLayers({ ...layers, sunlight: !layers.sunlight })}
+            className={`px-2 py-1 rounded-lg border transition text-[10px] font-bold cursor-pointer ${layers.sunlight ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-transparent border-transparent text-slate-600 hover:text-slate-400'}`}
+          >
+            Sunlight Exposure
+          </button>
+        </div>
+
+        {/* Zoom details HUD */}
+        <div className="absolute bottom-4 right-4 z-10 p-2 bg-slate-950/80 border border-slate-850 rounded-lg text-[9px] font-bold text-slate-500 select-none glass-card">
+          SCROLL MOUSE WHEEL TO PAN & ZOOM • ACTIVE
+        </div>
+
+        <Stage
+          width={900}
+          height={600}
+          ref={stageRef}
+          onWheel={handleStageWheel}
+          draggable={true}
+          className="cursor-grab active:cursor-grabbing"
+        >
+          {/* Layer 1: Roads border and asphalt */}
+          <Layer>
+            {objects
+              .filter(o => o.object_type === 'road')
+              .map((road) => {
+                const data = road.object_data || {};
+                const width = data.width || 30;
+                const border = data.borderThickness || 5;
+                return (
+                  <React.Fragment key={road.id}>
+                    {/* Road Borders */}
+                    <Line
+                      points={data.points || []}
+                      stroke={data.borderColor || '#334155'}
+                      strokeWidth={width + border * 2}
+                      lineCap="round"
+                      lineJoin="round"
+                      tension={data.tension || 0}
+                    />
+                    {/* Road Fills */}
+                    <Line
+                      points={data.points || []}
+                      stroke={data.asphaltColor || '#cbd5e1'}
+                      strokeWidth={width}
+                      lineCap="round"
+                      lineJoin="round"
+                      tension={data.tension || 0}
+                    />
+                  </React.Fragment>
+                );
+              })}
+          </Layer>
+
+          {/* Layer 2: Lot boundary polygons */}
+          <Layer>
+            {objects
+              .filter(o => o.object_type === 'lot' || o.object_type === 'house')
+              .map((lot) => {
+                const data = lot.object_data || {};
+                const isLinked = !!lot.linked_property_id;
+                
+                // Fetch dynamic status color overrides
+                const fill = getLotFillColor(lot.linked_property_id, data.fillColor);
+                
+                return (
+                  <Group
+                    key={lot.id}
+                    onClick={() => isLinked && handleLotClick(lot.linked_property_id)}
+                    className="cursor-pointer"
+                  >
+                    <Line
+                      points={data.points || []}
+                      fill={fill}
+                      stroke={data.borderColor || '#047857'}
+                      strokeWidth={1.5}
+                      closed={true}
+                      opacity={0.6}
+                    />
+                    {data.points && data.points.length >= 4 && (
+                      <Text
+                        text={data.name || ''}
+                        x={data.points[0]}
+                        y={data.points[1] - 12}
+                        fontSize={10}
+                        fontStyle="bold"
+                        fill="#f8fafc"
+                      />
+                    )}
+                  </Group>
+                );
+              })}
+          </Layer>
+
+          {/* Layer 3: Environmental risk overlays */}
+          <Layer>
+            {/* Flood Zone */}
+            {layers.flood && objects
+              .filter(o => o.object_type === 'zone')
+              .map((zone) => {
+                const data = zone.object_data || {};
+                return (
+                  <Line
+                    key={zone.id}
+                    points={data.points || []}
+                    fill={data.color || '#f43f5e'}
+                    closed={true}
+                    opacity={data.opacity || 0.25}
+                  />
+                );
+              })}
+
+            {/* Tree amenities and lights */}
+            {objects
+              .filter(o => o.object_type === 'tree' || o.object_type === 'street_light')
+              .map((am) => {
+                const data = am.object_data || {};
+                return (
+                  <Circle
+                    key={am.id}
+                    x={data.x || 0}
+                    y={data.y || 0}
+                    radius={data.radius || 8}
+                    fill={data.fill || '#10b981'}
+                    stroke="#1e293b"
+                    strokeWidth={1}
+                  />
+                );
+              })}
+
+            {/* Buildings (clubhouse, pool) */}
+            {objects
+              .filter(o => o.object_type === 'clubhouse' || o.object_type === 'pool' || o.object_type === 'guard_house')
+              .map((b) => {
+                const data = b.object_data || {};
+                if (b.object_type === 'guard_house') {
+                  return (
+                    <Circle
+                      key={b.id}
+                      x={data.x || 0}
+                      y={data.y || 0}
+                      radius={data.radius || 15}
+                      fill={data.fill || '#ef4444'}
+                      stroke="#1e293b"
+                    />
+                  );
+                }
+                return (
+                  <Rect
+                    key={b.id}
+                    x={data.x || 0}
+                    y={data.y || 0}
+                    width={data.width || 80}
+                    height={data.height || 50}
+                    fill={data.fill || '#0284c7'}
+                    stroke="#1e293b"
+                    strokeWidth={1.5}
+                    cornerRadius={4}
+                  />
+                );
+              })}
+
+            {/* Labels */}
+            {objects
+              .filter(o => o.object_type === 'label')
+              .map((lbl) => {
+                const data = lbl.object_data || {};
+                return (
+                  <Text
+                    key={lbl.id}
+                    x={data.x || 0}
+                    y={data.y || 0}
+                    text={data.text || ''}
+                    fill={data.fill || '#ffffff'}
+                    fontSize={data.fontSize || 12}
+                    fontStyle="bold"
+                  />
+                );
+              })}
+          </Layer>
+        </Stage>
+      </div>
+
+      {/* 3. Details Dialog Modal Popup */}
+      <PropertyDetailModal
+        property={selectedProperty}
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setSelectedProperty(null);
+        }}
+      />
+      
+    </div>
+  );
+}
+
+// Fallback visual blueprint dataset
+const getMockObjects = (vId) => [
+  {
+    id: 'mock-road-1',
+    object_type: 'road',
+    layer_order: 1,
+    is_visible: true,
+    object_data: { name: 'Main Boulevard', points: [100, 250, 700, 250], width: 40, asphaltColor: '#e2e8f0', borderColor: '#334155', borderThickness: 6 }
+  },
+  {
+    id: 'mock-road-2',
+    object_type: 'road',
+    layer_order: 1,
+    is_visible: true,
+    object_data: { name: 'Lake Side Alley', points: [350, 250, 350, 500], width: 25, asphaltColor: '#cbd5e1', borderColor: '#475569', borderThickness: 5 }
+  },
+  // Mock Lot Polygons
+  {
+    id: 'mock-lot-1',
+    object_type: 'lot',
+    layer_order: 2,
+    is_visible: true,
+    linked_property_id: 'mock-prop-1',
+    object_data: { name: 'Block A Lot 1', points: [120, 100, 220, 100, 220, 200, 120, 200], fillColor: '#10b981', borderColor: '#047857' }
+  },
+  {
+    id: 'mock-lot-2',
+    object_type: 'lot',
+    layer_order: 2,
+    is_visible: true,
+    linked_property_id: 'mock-prop-2',
+    object_data: { name: 'Block A Lot 2', points: [240, 100, 340, 100, 340, 200, 240, 200], fillColor: '#f59e0b', borderColor: '#d97706' }
+  },
+  {
+    id: 'mock-lot-3',
+    object_type: 'lot',
+    layer_order: 2,
+    is_visible: true,
+    linked_property_id: 'mock-prop-3',
+    object_data: { name: 'Block A Lot 3', points: [360, 100, 460, 100, 460, 200, 360, 200], fillColor: '#ef4444', borderColor: '#b91c1c' }
+  },
+  // Mock Amenities
+  {
+    id: 'mock-tree-1',
+    object_type: 'tree',
+    layer_order: 3,
+    is_visible: true,
+    object_data: { x: 500, y: 150, radius: 12, fill: '#059669' }
+  },
+  {
+    id: 'mock-clubhouse',
+    object_type: 'clubhouse',
+    layer_order: 3,
+    is_visible: true,
+    object_data: { x: 550, y: 320, width: 90, height: 60, fill: '#0ea5e9', name: 'Lagoon Clubhouse' }
+  },
+  // Flood Overlay
+  {
+    id: 'mock-flood-zone',
+    object_type: 'zone',
+    layer_order: 0,
+    is_visible: true,
+    object_data: { label: 'High Flood Risk Zone', color: '#f43f5e', opacity: 0.25, points: [500, 100, 800, 100, 800, 220, 500, 220] }
+  }
+];
