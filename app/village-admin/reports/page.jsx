@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import DashboardShell from '@/components/layout/DashboardShell';
+import { getManageableVillages } from '@/lib/villages/getManageableVillages';
 import { 
   BarChart as BarIcon, 
   Loader2, 
@@ -64,28 +65,27 @@ export default function VillageAdminReportsPage() {
       const bookingRatio = total > 0 ? Math.round(((reserved + sold) / total) * 100) : 0;
 
       setStats({
-        totalSales: totalSalesSum || 14400000, // Demo fallback if zero
-        activeBookingsRate: bookingRatio || 48,
-        availableLots: available || 12,
-        totalLots: total || 24
+        totalSales: totalSalesSum,
+        activeBookingsRate: bookingRatio,
+        availableLots: available,
+        totalLots: total
       });
 
       // PieChart Lot status datasets
       setStatusDistribution([
-        { name: 'Available Lots', value: available || 12, color: '#10b981' },
-        { name: 'Reserved Holds', value: reserved || 8, color: '#f59e0b' },
-        { name: 'Sold Out Properties', value: sold || 4, color: '#ef4444' }
+        { name: 'Available Lots', value: available, color: '#10b981' },
+        { name: 'Reserved Holds', value: reserved, color: '#f59e0b' },
+        { name: 'Sold Out Properties', value: sold, color: '#ef4444' }
       ]);
 
-      // BarChart Revenue monthly trends mockup / queries
-      // Usually queried from reservations / payments, here mocked gracefully based on sales
+      // Temporary monthly projection from current sold value until payment analytics are connected.
       setRevenueTrend([
-        { month: 'Jan', revenue: totalSalesSum ? totalSalesSum * 0.15 : 1200000 },
-        { month: 'Feb', revenue: totalSalesSum ? totalSalesSum * 0.22 : 1800000 },
-        { month: 'Mar', revenue: totalSalesSum ? totalSalesSum * 0.18 : 1500000 },
-        { month: 'Apr', revenue: totalSalesSum ? totalSalesSum * 0.28 : 2200000 },
-        { month: 'May', revenue: totalSalesSum ? totalSalesSum * 0.35 : 2900000 },
-        { month: 'Jun', revenue: totalSalesSum ? totalSalesSum * 0.40 : 3400000 }
+        { month: 'Jan', revenue: totalSalesSum * 0.15 },
+        { month: 'Feb', revenue: totalSalesSum * 0.22 },
+        { month: 'Mar', revenue: totalSalesSum * 0.18 },
+        { month: 'Apr', revenue: totalSalesSum * 0.28 },
+        { month: 'May', revenue: totalSalesSum * 0.35 },
+        { month: 'Jun', revenue: totalSalesSum * 0.40 }
       ]);
 
     } catch (err) {
@@ -100,22 +100,12 @@ export default function VillageAdminReportsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // 1. Fetch assigned scope
-      const { data: uv } = await supabase
-        .from('user_villages')
-        .select('*, villages(*)')
-        .eq('user_id', user.id);
-
-      const uvList = uv || [];
-      const vList = uvList.map(item => item.villages).filter(Boolean);
+      const vList = await getManageableVillages(supabase, user.id);
       setVillages(vList);
 
       if (vList.length > 0) {
         setSelectedVillageId(vList[0].id);
         await generateReportData(vList[0].id);
-      } else {
-        // Fallback for default mock analytics
-        await generateReportData('mock-village-id');
       }
     } catch (err) {
       console.error('Error fetching reports initialization:', err);
@@ -166,11 +156,16 @@ export default function VillageAdminReportsPage() {
             <select
               value={selectedVillageId}
               onChange={handleVillageChange}
+              disabled={villages.length === 0}
               className="bg-slate-900 border border-slate-800 rounded-xl py-2.5 px-4 text-xs font-semibold outline-none text-slate-200 cursor-pointer shadow"
             >
-              {villages.map(v => (
-                <option key={v.id} value={v.id}>{v.name}</option>
-              ))}
+              {villages.length === 0 ? (
+                <option value="">No active villages found</option>
+              ) : (
+                villages.map(v => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
+                ))
+              )}
             </select>
           </div>
         </div>

@@ -1,139 +1,205 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { 
-  Home, 
-  Map, 
-  Users, 
-  CreditCard, 
-  FileText, 
-  Calendar, 
-  Building, 
-  Shield, 
-  BarChart, 
-  PencilRuler, 
-  Activity, 
-  HelpCircle,
-  Inbox
+import {
+  BarChart,
+  Building,
+  Calendar,
+  ChevronDown,
+  CreditCard,
+  Home,
+  Inbox,
+  LayoutDashboard,
+  Map,
+  PencilRuler,
+  Settings,
+  Shield,
+  Users
 } from 'lucide-react';
 
-export default function Sidebar({ isOpen, onClose }) {
+function initials(name = '') {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase() || 'U';
+}
+
+export default function Sidebar({ isOpen, isCollapsed = false, onClose }) {
   const pathname = usePathname();
   const supabase = createClient();
-  const [role, setRole] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [accountsOpen, setAccountsOpen] = useState(false);
 
   useEffect(() => {
-    async function fetchRole() {
+    async function fetchProfile() {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .single();
-        if (profile) {
-          setRole(profile.role);
-        }
-      }
+      if (!user) return;
+
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      setProfile(data || null);
     }
-    fetchRole();
+
+    fetchProfile();
   }, [supabase]);
 
-  const getLinks = () => {
-    if (!role) return [];
+  const role = profile?.role;
 
-    switch (role) {
-      case 'super_admin':
-        return [
-          { name: 'Admin Dashboard', href: '/super-admin/dashboard', icon: Home },
-          { name: 'Properties & Map Specs', href: '/village-admin/dashboard', icon: Building },
-          { name: 'Payments & Booking Audit', href: '/accounting/dashboard', icon: CreditCard },
-          { name: 'Blueprint Canvas Editors', href: '/architect/dashboard', icon: PencilRuler },
-          { name: 'Customer View Hub', href: '/customer/dashboard', icon: Users },
-        ];
-      case 'village_admin':
-        return [
-          { name: 'Dashboard', href: '/village-admin/dashboard', icon: Home },
-          { name: 'Properties', href: '/village-admin/properties', icon: Building },
-          { name: 'Reservations', href: '/village-admin/reservations', icon: Inbox },
-          { name: 'Site Viewings', href: '/village-admin/site-viewings', icon: Calendar },
-          { name: 'Blueprint Preview', href: '/village-admin/blueprint-preview', icon: Map },
-          { name: 'Village Reports', href: '/village-admin/reports', icon: BarChart },
-        ];
-      case 'accounting':
-        return [
-          { name: 'Dashboard', href: '/accounting/dashboard', icon: Home },
-          { name: 'Verify Payments', href: '/accounting/payments', icon: CreditCard },
-          { name: 'Refund Requests', href: '/accounting/refunds', icon: FileText },
-          { name: 'Financial Reports', href: '/accounting/reports', icon: BarChart },
-        ];
-      case 'architect':
-        return [
-          { name: 'Dashboard', href: '/architect/dashboard', icon: Home },
-          { name: 'Blueprint Editor', href: '/architect/blueprints', icon: PencilRuler },
-        ];
-      case 'customer':
-      default:
-        return [
-          { name: 'Overview', href: '/customer/dashboard', icon: Home },
-          { name: 'My Reservations', href: '/customer/reservations', icon: Inbox },
-          { name: 'Payments Ledger', href: '/customer/payments', icon: CreditCard },
-          { name: 'My Documents', href: '/customer/documents', icon: FileText },
-          { name: 'Site Viewings', href: '/customer/site-viewing', icon: Calendar },
-        ];
-    }
+  const linksByRole = {
+    super_admin: [
+      { name: 'Dashboard', href: '/super-admin/dashboard', icon: LayoutDashboard },
+      { name: 'Villages / Properties', href: '/village-admin/properties', icon: Building },
+      { name: 'Reservations / Siteviewings', href: '/village-admin/reservations', icon: Calendar },
+      { name: 'Payments / Booking Audit', href: '/village-admin/payments-booking-audit', icon: CreditCard },
+      { name: 'Reports', href: '/village-admin/reports', icon: BarChart },
+      { name: 'Map Canvas Editor', href: '/architect/dashboard', icon: PencilRuler },
+      { name: 'Customer View Hub', href: '/super-admin/customer-view-hub', icon: Users },
+      { name: 'Settings', href: '/super-admin/settings', icon: Settings }
+    ],
+    village_admin: [
+      { name: 'Dashboard', href: '/village-admin/dashboard', icon: LayoutDashboard },
+      { name: 'Villages / Properties', href: '/village-admin/properties', icon: Building },
+      { name: 'Reservations / Siteviewings', href: '/village-admin/reservations', icon: Calendar },
+      { name: 'Payments / Booking Audit', href: '/accounting/dashboard', icon: CreditCard },
+      { name: 'Reports', href: '/village-admin/reports', icon: BarChart },
+      { name: 'Map Canvas Editor', href: '/village-admin/blueprint-preview', icon: Map },
+      { name: 'Customer View Hub', href: '/village-admin/customer-view-hub', icon: Users },
+      { name: 'Settings', href: '/village-admin/settings', icon: Settings }
+    ],
+    accounting: [
+      { name: 'Dashboard', href: '/accounting/dashboard', icon: Home },
+      { name: 'Payments / Booking Audit', href: '/accounting/dashboard', icon: CreditCard },
+      { name: 'Reports', href: '/accounting/reports', icon: BarChart }
+    ],
+    architect: [
+      { name: 'Dashboard', href: '/architect/dashboard', icon: Home },
+      { name: 'Map Canvas Editor', href: '/architect/dashboard', icon: PencilRuler }
+    ],
+    customer: [
+      { name: 'Overview', href: '/customer/dashboard', icon: Home },
+      { name: 'My Reservations', href: '/customer/reservations', icon: Inbox },
+      { name: 'Payments Ledger', href: '/customer/payments', icon: CreditCard },
+      { name: 'My Documents', href: '/customer/documents', icon: Shield },
+      { name: 'Site Viewings', href: '/customer/site-viewing', icon: Calendar }
+    ]
   };
 
-  const links = getLinks();
+  const links = linksByRole[role] || [];
+  const accountLinks = [
+    { name: 'Customers', href: '/super-admin/accounts/customers' },
+    { name: 'Admins', href: '/super-admin/accounts/admins' },
+    { name: 'Accounting', href: '/super-admin/accounts/accounting' },
+    { name: 'Architects', href: '/super-admin/accounts/architects' }
+  ];
+
+  const canManageAccounts = role === 'super_admin';
 
   return (
     <>
-      {/* Mobile Sidebar Overlay */}
       {isOpen && (
         <div
           onClick={onClose}
-          className="fixed inset-0 z-30 bg-slate-950/60 backdrop-blur-sm md:hidden transition-opacity"
+          className="fixed inset-0 z-30 bg-[#272727]/45 backdrop-blur-sm md:hidden"
         />
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-35 w-64 bg-slate-900 border-r border-slate-800/80 pt-16 flex flex-col transition-transform duration-300 md:translate-x-0 md:static md:pt-0 ${
-          isOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`fixed left-0 top-[61px] z-35 flex h-[calc(100vh-61px)] flex-col border-r border-[#e2e8f0] bg-white shadow-sm transition-all duration-300 ${
+          isCollapsed ? 'md:w-20' : 'md:w-72'
+        } w-72 ${
+          isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         }`}
       >
-        <div className="flex-1 px-4 py-6 overflow-y-auto space-y-1.5">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 block mb-4 select-none">
-            Navigation Menu
-          </span>
-          {links.map((link) => {
-            const Icon = link.icon;
-            const isActive = pathname === link.href || pathname.startsWith(link.href + '/');
-            return (
-              <Link
-                key={link.name}
-                href={link.href}
-                onClick={onClose}
-                className={`flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-semibold transition-all group ${
-                  isActive
-                    ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 border border-transparent'
-                }`}
-              >
-                <Icon className={`w-4.5 h-4.5 transition-transform group-hover:scale-110 ${isActive ? 'text-emerald-400' : 'text-slate-400 group-hover:text-slate-300'}`} />
-                {link.name}
-              </Link>
-            );
-          })}
+        <div className="flex-1 overflow-y-auto px-3 py-5">
+          {!isCollapsed && (
+            <span className="mb-4 block px-3 text-[10px] font-extrabold uppercase tracking-wider text-[#94a3b8]">
+              Navigation Menu
+            </span>
+          )}
+
+          <nav className="space-y-1.5">
+            {links.map((link) => {
+              const Icon = link.icon;
+              const isActive = pathname === link.href || pathname.startsWith(`${link.href}/`);
+              return (
+                <Link
+                  key={link.name}
+                  href={link.href}
+                  onClick={onClose}
+                  title={isCollapsed ? link.name : undefined}
+                  className={`flex min-h-11 items-center gap-3 rounded-xl border px-3 text-sm font-bold transition ${
+                    isActive
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : 'border-transparent text-[#64748b] hover:border-[#e2e8f0] hover:bg-[#f8fafc] hover:text-[#272727]'
+                  } ${isCollapsed ? 'justify-center' : ''}`}
+                >
+                  <Icon className={`h-4.5 w-4.5 flex-shrink-0 ${isActive ? 'text-emerald-600' : 'text-[#94a3b8]'}`} />
+                  {!isCollapsed && <span>{link.name}</span>}
+                </Link>
+              );
+            })}
+
+            {canManageAccounts && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setAccountsOpen((current) => !current)}
+                  className={`flex min-h-11 w-full items-center gap-3 rounded-xl border border-transparent px-3 text-sm font-bold text-[#64748b] transition hover:border-[#e2e8f0] hover:bg-[#f8fafc] hover:text-[#272727] ${
+                    isCollapsed ? 'justify-center' : ''
+                  }`}
+                  title={isCollapsed ? 'Manage Accounts' : undefined}
+                >
+                  <Users className="h-4.5 w-4.5 flex-shrink-0 text-[#94a3b8]" />
+                  {!isCollapsed && (
+                    <>
+                      <span className="flex-1 text-left">Manage Accounts</span>
+                      <ChevronDown className={`h-4 w-4 transition ${accountsOpen ? 'rotate-180' : ''}`} />
+                    </>
+                  )}
+                </button>
+                {!isCollapsed && accountsOpen && (
+                  <div className="ml-6 mt-1 space-y-1 border-l border-[#e2e8f0] pl-3">
+                    {accountLinks.map((link) => (
+                      <Link
+                        key={link.name}
+                        href={link.href}
+                        onClick={onClose}
+                        className="block rounded-lg px-3 py-2 text-xs font-bold text-[#64748b] transition hover:bg-[#f8fafc] hover:text-[#272727]"
+                      >
+                        {link.name}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </nav>
         </div>
 
-        {role && (
-          <div className="p-4 border-t border-slate-800/60 bg-slate-900/60">
-            <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 select-none">
-              <Shield className="w-3.5 h-3.5 text-emerald-500/50" />
-              <span>Security level: Active</span>
+        {profile && (
+          <div className="border-t border-[#e2e8f0] p-3">
+            <div className={`flex items-center gap-3 rounded-xl bg-[#f8fafc] p-3 ${isCollapsed ? 'justify-center' : ''}`}>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100 text-sm font-extrabold text-emerald-700">
+                {initials(profile.full_name)}
+              </div>
+              {!isCollapsed && (
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-extrabold text-[#272727]">{profile.full_name}</p>
+                  <p className="truncate text-[10px] font-bold uppercase tracking-wider text-emerald-600">
+                    {profile.role?.replaceAll('_', ' ')}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}

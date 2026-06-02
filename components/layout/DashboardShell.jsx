@@ -6,9 +6,14 @@ import Sidebar from './Sidebar';
 
 export default function DashboardShell({ children }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   const toggleSidebar = () => {
-    setIsSidebarOpen(!isSidebarOpen);
+    if (window.innerWidth >= 768) {
+      setIsSidebarCollapsed((current) => !current);
+      return;
+    }
+    setIsSidebarOpen((current) => !current);
   };
 
   const closeSidebar = () => {
@@ -16,20 +21,15 @@ export default function DashboardShell({ children }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col relative overflow-hidden">
-      {/* Decorative gradient glowing spheres */}
-      <div className="absolute top-[-20%] right-[-10%] w-[800px] h-[800px] rounded-full bg-emerald-950/10 blur-[150px] pointer-events-none" />
-      <div className="absolute bottom-[-20%] left-[-10%] w-[800px] h-[800px] rounded-full bg-teal-950/10 blur-[150px] pointer-events-none" />
-
-      {/* Main Nav header */}
+    <div className="relative flex min-h-screen flex-col overflow-hidden bg-[#f8fafc] text-[#272727]">
       <Navbar toggleSidebar={toggleSidebar} isSidebarOpen={isSidebarOpen} />
       
-      <div className="flex-1 flex overflow-hidden relative z-10">
-        {/* Navigation Sidebar */}
-        <Sidebar isOpen={isSidebarOpen} onClose={closeSidebar} />
+      <div className="relative z-10 flex flex-1 overflow-hidden">
+        <Sidebar isOpen={isSidebarOpen} isCollapsed={isSidebarCollapsed} onClose={closeSidebar} />
         
-        {/* Main Content Pane */}
-        <main className="flex-1 overflow-y-auto px-4 py-6 md:px-8 w-full max-w-[1400px] mx-auto">
+        <main className={`w-full flex-1 overflow-y-auto px-4 py-6 transition-[margin] duration-300 md:px-8 ${
+          isSidebarCollapsed ? 'md:ml-20' : 'md:ml-72'
+        }`}>
           {children}
         </main>
       </div>

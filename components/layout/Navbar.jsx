@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import { Building, Bell, LogOut, User, Menu, X, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
@@ -76,12 +77,13 @@ export default function Navbar({ toggleSidebar, isSidebarOpen }) {
   };
 
   return (
-    <header className="sticky top-0 z-40 w-full glass-card border-b border-slate-800/80 px-4 py-3 flex items-center justify-between shadow-md">
+    <header className="sticky top-0 z-40 flex w-full items-center justify-between border-b border-[#e2e8f0] bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
       <div className="flex items-center gap-3">
         {toggleSidebar && (
           <button
             onClick={toggleSidebar}
-            className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/60 transition outline-none cursor-pointer"
+            className="rounded-lg border border-[#e2e8f0] bg-white p-1.5 text-[#272727] outline-none transition hover:bg-[#f8fafc]"
+            aria-label="Toggle sidebar"
           >
             {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
@@ -91,7 +93,7 @@ export default function Navbar({ toggleSidebar, isSidebarOpen }) {
           <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shadow-inner">
             <Building className="w-4.5 h-4.5" />
           </div>
-          <span className="bg-gradient-to-r from-slate-900 to-emerald-600 bg-clip-text text-transparent">iReserve</span>
+          <span className="text-emerald-600">iReserve</span>
         </Link>
       </div>
 
@@ -163,9 +165,11 @@ export default function Navbar({ toggleSidebar, isSidebarOpen }) {
             </div>
             
             {user.profile?.avatar_url ? (
-              <img
+              <Image
                 src={user.profile.avatar_url}
                 alt="Avatar"
+                width={36}
+                height={36}
                 className="w-9 h-9 rounded-full object-cover border border-slate-800"
               />
             ) : (

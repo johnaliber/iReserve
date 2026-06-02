@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { createClient } from '@/lib/supabase/client';
 import DashboardShell from '@/components/layout/DashboardShell';
+import PropertyEditorDrawer from '@/components/admin/PropertyEditorDrawer';
+import { getManageableVillages } from '@/lib/villages/getManageableVillages';
 import { Map, Loader2 } from 'lucide-react';
 
 const InteractiveVillageMap = dynamic(
@@ -17,20 +19,26 @@ export default function VillageAdminBlueprintPreviewPage() {
   const [villages, setVillages] = useState([]);
   const [selectedVillageId, setSelectedVillageId] = useState('');
   const [selectedVillageSlug, setSelectedVillageSlug] = useState('');
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [selectedObject, setSelectedObject] = useState(null);
+  const [selectedProperty, setSelectedProperty] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [mapVersion, setMapVersion] = useState(0);
 
   const fetchInitData = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // 1. Fetch user villages to find assigned scope
-      const { data: uv } = await supabase
-        .from('user_villages')
-        .select('*, villages(*)')
-        .eq('user_id', user.id);
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
 
-      const uvList = uv || [];
-      const vList = uvList.map(item => item.villages).filter(Boolean);
+      setIsSuperAdmin(profile?.role === 'super_admin');
+
+      const vList = await getManageableVillages(supabase, user.id);
       setVillages(vList);
 
       if (vList.length > 0) {
@@ -58,6 +66,22 @@ export default function VillageAdminBlueprintPreviewPage() {
     if (matched) {
       setSelectedVillageSlug(matched.slug);
     }
+    setSelectedObject(null);
+    setSelectedProperty(null);
+    setDrawerOpen(false);
+  };
+
+  const handleObjectSelect = (blueprintObject, property) => {
+    setSelectedObject(blueprintObject);
+    setSelectedProperty(property || null);
+    setDrawerOpen(true);
+  };
+
+  const refreshMap = () => {
+    setMapVersion((version) => version + 1);
+    setDrawerOpen(false);
+    setSelectedObject(null);
+    setSelectedProperty(null);
   };
 
   if (loading && villages.length === 0) {
@@ -68,47 +92,80 @@ export default function VillageAdminBlueprintPreviewPage() {
     );
   }
 
-  // Pre-configured mock village slug for viewports if empty
-  const currentSlug = selectedVillageSlug || 'emerald-ridge';
+  const currentSlug = selectedVillageSlug;
 
   return (
     <DashboardShell>
       <div className="space-y-6">
         
         {/* Header Title */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-900 pb-5">
+        <div className="flex flex-col gap-4 border-b border-[#e2e8f0] pb-5 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-3xl font-extrabold text-white flex items-center gap-2">
+            <h1 className="flex items-center gap-2 text-3xl font-extrabold text-[#272727]">
               <Map className="w-8 h-8 text-emerald-400" />
               Blueprint Preview Viewport
             </h1>
-            <p className="text-slate-400 text-xs mt-1">
-              Explore the buyer-facing interactive canvas map including standard searches, status legends, sunlight exposures, and flood risk warning layers.
+            <p className="mt-1 text-xs text-[#64748b]">
+              Preview the subdivision map, inspect lot data, and update linked property details directly from lot or house objects.
             </p>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider select-none">Scope:</span>
+            <span className="select-none text-xs font-semibold uppercase tracking-wider text-[#64748b]">Scope:</span>
             <select
               value={selectedVillageId}
               onChange={handleVillageChange}
-              className="bg-slate-900 border border-slate-800 rounded-xl py-2.5 px-4 text-xs font-semibold outline-none text-slate-200 cursor-pointer shadow"
+              disabled={villages.length === 0}
+              className="cursor-pointer rounded-lg border border-[#dbe4ee] bg-white px-4 py-2.5 text-xs font-semibold text-[#272727] shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15"
             >
-              {villages.map(v => (
-                <option key={v.id} value={v.id}>{v.name}</option>
-              ))}
+              {villages.length === 0 ? (
+                <option value="">No active villages found</option>
+              ) : (
+                villages.map(v => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
+                ))
+              )}
             </select>
           </div>
         </div>
 
         {/* Blueprint stage */}
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 glass-card shadow min-h-[500px]">
-          <InteractiveVillageMap 
-            key={selectedVillageId} 
-            villageSlug={currentSlug} 
-            hideSidebar={false} 
-          />
+        <div className="min-h-[500px] rounded-xl border border-[#e2e8f0] bg-white p-6 shadow-sm">
+          {currentSlug ? (
+            <InteractiveVillageMap 
+              key={`${selectedVillageId}-${mapVersion}`}
+              villageSlug={currentSlug} 
+              hideSidebar={false} 
+              allowDemoFallback={false}
+              adminPropertyMode={true}
+              adminShowHidden={true}
+              preferDraftBlueprint={true}
+              showSmartAssistant={false}
+              onAdminObjectSelect={handleObjectSelect}
+            />
+          ) : (
+            <div className="min-h-[500px] flex items-center justify-center text-center p-8">
+              <div>
+                <Map className="w-10 h-10 text-slate-700 mx-auto mb-3" />
+                <h4 className="text-sm font-semibold text-slate-400">No Active Village Found</h4>
+                <p className="text-[11px] text-slate-500 mt-1 max-w-xs">
+                  Add or activate a village in the database to preview its buyer-facing map.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
+
+        <PropertyEditorDrawer
+          open={drawerOpen}
+          villageId={selectedVillageId}
+          blueprintObject={selectedObject}
+          property={selectedProperty}
+          isSuperAdmin={isSuperAdmin}
+          onClose={() => setDrawerOpen(false)}
+          onSaved={refreshMap}
+          onDeleted={refreshMap}
+        />
 
       </div>
     </DashboardShell>

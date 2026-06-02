@@ -26,37 +26,7 @@ export default async function HomePage() {
     console.error('Error fetching villages on homepage:', err);
     error = err;
   }
-
-  // Pre-configured mock villages for immediate visualization if database is empty
-  const mockVillages = [
-    {
-      id: 'mock-1',
-      name: 'Emerald Ridge Heights',
-      slug: 'emerald-ridge',
-      description: 'A luxurious eco-friendly smart subdivision sitting on a gentle ridge. Features solar lighting, automated security gates, large private pools, and beautiful natural pine tree trails.',
-      address: 'KM 54 Ridge Highway',
-      city: 'Tagaytay',
-      province: 'Cavite',
-      starting_price: 4500000,
-      hero_image_url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80',
-      properties_count: 24,
-      available_count: 12
-    },
-    {
-      id: 'mock-2',
-      name: 'Teal Lagoon Residences',
-      slug: 'teal-lagoon',
-      description: 'A beautiful waterfront village centered around a crystal clear recreational lake. Boasts a sprawling yacht club, tennis courts, sand volleyball, and robust fiber optic internet.',
-      address: 'Lagoon Circle Drive',
-      city: 'Calamba',
-      province: 'Laguna',
-      starting_price: 3800000,
-      hero_image_url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
-      properties_count: 18,
-      available_count: 8
-    }
-  ];
-
+  
   const displayedVillages = villages.length > 0 ? villages : mockVillages;
 
   return (

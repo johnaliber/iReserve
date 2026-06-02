@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import DashboardShell from '@/components/layout/DashboardShell';
+import { getManageableVillages } from '@/lib/villages/getManageableVillages';
 import { 
   Calendar, 
   Search, 
@@ -55,14 +56,7 @@ export default function VillageAdminSiteViewingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // 1. Fetch user villages to find assigned scope
-      const { data: uv } = await supabase
-        .from('user_villages')
-        .select('*, villages(*)')
-        .eq('user_id', user.id);
-
-      const uvList = uv || [];
-      const vList = uvList.map(item => item.villages).filter(Boolean);
+      const vList = await getManageableVillages(supabase, user.id);
       setVillages(vList);
 
       if (vList.length > 0) {
@@ -162,11 +156,16 @@ export default function VillageAdminSiteViewingsPage() {
             <select
               value={selectedVillageId}
               onChange={handleVillageChange}
+              disabled={villages.length === 0}
               className="bg-slate-900 border border-slate-800 rounded-xl py-2.5 px-4 text-xs font-semibold outline-none text-slate-200 cursor-pointer shadow"
             >
-              {villages.map(v => (
-                <option key={v.id} value={v.id}>{v.name}</option>
-              ))}
+              {villages.length === 0 ? (
+                <option value="">No active villages found</option>
+              ) : (
+                villages.map(v => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
+                ))
+              )}
             </select>
           </div>
         </div>

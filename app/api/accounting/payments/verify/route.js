@@ -1,0 +1,124 @@
+import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { recalculatePaymentIndicators } from '@/lib/payments/server';
+import { roundMoney } from '@/lib/payments/paymentMath';
+
+export const dynamic = 'force-dynamic';
+
+function json(status, payload) {
+  return Response.json(payload, { status });
+}
+
+export async function POST(request) {
+  const supabase = await createClient();
+  const admin = createAdminClient();
+  const body = await request.json();
+  const { paymentId, officialReceiptNumber, notes } = body || {};
+
+  if (!paymentId) {
+    return json(400, { error: 'Payment ID is required.' });
+  }
+
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) return json(401, { error: 'You must be signed in.' });
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (!['accounting', 'super_admin'].includes(profile?.role)) {
+    return json(403, { error: 'Only accounting or super admin can verify payments.' });
+  }
+
+  const { data: payment, error: paymentFetchError } = await admin
+    .from('payments')
+    .select('*, reservations(property_id, customer_id, reservation_code, properties(property_code))')
+    .eq('id', paymentId)
+    .single();
+
+  if (paymentFetchError || !payment) {
+    return json(404, { error: 'Payment was not found.' });
+  }
+
+  const { error: paymentError } = await admin
+    .from('payments')
+    .update({
+      payment_status: 'verified',
+      official_receipt_number: officialReceiptNumber,
+      accounting_notes: notes || 'Payment verified by accounting.',
+      verified_by: user.id,
+      verified_at: new Date().toISOString()
+    })
+    .eq('id', paymentId);
+
+  if (paymentError) return json(400, { error: paymentError.message });
+
+  if (payment.payment_schedule_id) {
+    const { data: schedule } = await admin
+      .from('payment_schedule')
+      .select('*')
+      .eq('id', payment.payment_schedule_id)
+      .single();
+
+    if (schedule) {
+      const amountPaid = roundMoney(Number(schedule.amount_paid || 0) + Number(payment.amount || 0));
+      const remainingDue = roundMoney(Math.max(0, Number(schedule.amount_due || 0) - amountPaid));
+      await admin
+        .from('payment_schedule')
+        .update({
+          amount_paid: amountPaid,
+          remaining_due: remainingDue,
+          status: remainingDue <= 0 ? 'paid' : 'partially_paid',
+          paid_at: remainingDue <= 0 ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', schedule.id);
+    }
+  }
+
+  let updatedPlan = null;
+  if (payment.payment_plan_id) {
+    updatedPlan = await recalculatePaymentIndicators(admin, payment.payment_plan_id);
+  }
+
+  await admin
+    .from('reservations')
+    .update({
+      status: updatedPlan?.status === 'fully_paid' ? 'converted_to_sale' : 'reserved',
+      approved_at: new Date().toISOString()
+    })
+    .eq('id', payment.reservation_id);
+
+  await admin
+    .from('properties')
+    .update({
+      status: updatedPlan?.status === 'fully_paid' ? 'sold' : 'reserved',
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', payment.reservations?.property_id);
+
+  await admin.from('audit_logs').insert({
+    user_id: user.id,
+    village_id: payment.village_id,
+    action: 'VERIFY_PAYMENT',
+    entity_type: 'payment',
+    entity_id: paymentId,
+    metadata: { officialReceiptNumber, payment_plan_id: payment.payment_plan_id }
+  });
+
+  if (payment.customer_id) {
+    await admin.from('notifications').insert({
+      user_id: payment.customer_id,
+      title: 'Payment Verified',
+      message: `Your payment for ${payment.reservations?.properties?.property_code || payment.reservations?.reservation_code} has been verified.`,
+      type: 'payment_verified'
+    });
+  }
+
+  return json(200, { paymentId, paymentPlan: updatedPlan });
+}

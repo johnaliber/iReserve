@@ -18,6 +18,8 @@ import {
   Inbox
 } from 'lucide-react';
 import Link from 'next/link';
+import PaymentSummaryCard from '@/components/payments/PaymentSummaryCard';
+import PaymentScheduleTable from '@/components/payments/PaymentScheduleTable';
 
 export default function CustomerDashboardPage() {
   const supabase = createClient();
@@ -39,7 +41,7 @@ export default function CustomerDashboardPage() {
       // 1. Fetch Reservations
       const { data: res } = await supabase
         .from('reservations')
-        .select('*, properties(*, villages(*))')
+        .select('*, properties(*, villages(*)), payment_plans(*, payment_schedule(*))')
         .eq('customer_id', authUser.id)
         .order('created_at', { ascending: false });
 
@@ -172,10 +174,14 @@ export default function CustomerDashboardPage() {
                 <div className="divide-y divide-slate-800/80">
                   {reservations.map((res) => {
                     const prop = res.properties || {};
-                    const isVerification = res.status === 'pending_verification';
+                    const plan = Array.isArray(res.payment_plans) ? res.payment_plans[0] : res.payment_plans;
+                    const schedule = plan?.payment_schedule || [];
                     
                     return (
-                      <div key={res.id} className="py-4 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div key={res.id} className="py-4 first:pt-0 last:pb-0 flex flex-col gap-4">
+                        <PaymentSummaryCard plan={plan} />
+                        <PaymentScheduleTable rows={schedule} />
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
                             <span className="font-extrabold text-slate-100 text-sm">{prop.property_code}</span>
@@ -209,6 +215,7 @@ export default function CustomerDashboardPage() {
                             </div>
                           </div>
                         )}
+                        </div>
                       </div>
                     );
                   })}

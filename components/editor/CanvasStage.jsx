@@ -239,7 +239,7 @@ export default function CanvasStage({
         newObj = {
           id: `label-${Date.now()}`,
           object_type: 'label',
-          object_data: { x: clickedPoint.x, y: clickedPoint.y, text: 'New Street Label', fill: '#ffffff', fontSize: 13 },
+          object_data: { x: clickedPoint.x, y: clickedPoint.y, text: 'New Street Label', fill: '#272727', fontSize: 13 },
           layer_order: 4,
           is_visible: true,
           is_locked: false
@@ -498,7 +498,7 @@ export default function CanvasStage({
                         y={data.points[1] - 12}
                         fontSize={10}
                         fontStyle="bold"
-                        fill="#f8fafc"
+                        fill="#272727"
                         opacity={lot.is_visible ? 1 : 0}
                       />
                     )}
@@ -595,7 +595,7 @@ export default function CanvasStage({
                   x={data.x || 0}
                   y={data.y || 0}
                   text={data.text || ''}
-                  fill={selectedObjectIds.includes(lbl.id) ? '#fbbf24' : (data.fill || '#ffffff')}
+                  fill={selectedObjectIds.includes(lbl.id) ? '#fbbf24' : (data.fill || '#272727')}
                   fontSize={data.fontSize || 12}
                   fontStyle="bold"
                   opacity={lbl.is_visible ? 1 : 0}

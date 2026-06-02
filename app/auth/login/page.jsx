@@ -77,7 +77,7 @@ export default function LoginPage() {
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mb-4 shadow-lg shadow-emerald-500/5">
             <Building className="w-6 h-6" />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-600 bg-clip-text text-transparent">
+          <h1 className="text-3xl font-bold tracking-tight text-emerald-600">
             iReserve
           </h1>
           <p className="text-slate-400 text-sm mt-2">

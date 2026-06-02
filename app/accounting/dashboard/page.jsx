@@ -17,6 +17,7 @@ import {
   Building,
   User
 } from 'lucide-react';
+import PaymentVerificationPanel from '@/components/accounting/PaymentVerificationPanel';
 
 export default function AccountingDashboardPage() {
   const supabase = createClient();
@@ -40,7 +41,7 @@ export default function AccountingDashboardPage() {
     try {
       const { data, error } = await supabase
         .from('payments')
-        .select('*, reservations(*, properties(*, villages(*)), profiles(full_name))')
+        .select('*, payment_plans(*), reservations(*, properties(*, villages(*)), profiles(full_name))')
         .order('created_at', { ascending: false });
 
       if (!error && data) {
@@ -64,8 +65,6 @@ export default function AccountingDashboardPage() {
   const handleVerifyPayment = async (payId, reservationId, propertyId) => {
     setAuditing(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-
       if (typeof payId === 'string' && payId.startsWith('mock-')) {
         // Handle mock payment records gracefully for testing and QA
         const currentList = payments.length > 0 ? payments : getMockPayments();
@@ -88,50 +87,21 @@ export default function AccountingDashboardPage() {
         return;
       }
 
-      // 1. Update Payment Status to 'verified'
-      const { error: payError } = await supabase
-        .from('payments')
-        .update({
-          payment_status: 'verified',
-          official_receipt_number: orNumber || generateReceiptNumber(),
-          accounting_notes: notes || 'Hold fee deposit successfully verified by accounting audit.',
-          verified_by: user.id,
-          verified_at: new Date().toISOString()
+      const response = await fetch('/api/accounting/payments/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentId: payId,
+          reservationId,
+          propertyId,
+          officialReceiptNumber: orNumber || generateReceiptNumber(),
+          notes
         })
-        .eq('id', payId);
-
-      if (payError) throw payError;
-
-      // 2. Update Reservation Status to 'reserved' (or 'approved')
-      const { error: resError } = await supabase
-        .from('reservations')
-        .update({
-          status: 'reserved',
-          approved_at: new Date().toISOString()
-        })
-        .eq('id', reservationId);
-
-      if (resError) throw resError;
-
-      // 3. Create a transaction audit log
-      await supabase.from('audit_logs').insert({
-        user_id: user.id,
-        action: 'VERIFY_PAYMENT',
-        entity_type: 'payment',
-        entity_id: payId,
-        metadata: { or_number: orNumber, notes }
       });
 
-      // 4. Create client notification
-      const payRecord = payments.find(p => p.id === payId);
-      const customerId = payRecord?.customer_id;
-      if (customerId) {
-        await supabase.from('notifications').insert({
-          user_id: customerId,
-          title: 'Hold Deposit Verified',
-          message: `Your hold fee payment for property ${payRecord.reservations?.properties?.property_code} has been verified under Receipt ${orNumber || 'OR-System'}. Your lot hold is officially active.`,
-          type: 'payment_verified'
-        });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || 'Payment verification failed.');
       }
 
       setOrNumber('');
@@ -486,6 +456,8 @@ export default function AccountingDashboardPage() {
                   <span className="font-bold text-white block mt-0.5">₱{selectedPayment.amount?.toLocaleString()}</span>
                 </div>
               </div>
+
+              <PaymentVerificationPanel plan={selectedPayment.payment_plans} />
 
               {/* Input for OR Number */}
               <div className="space-y-4 text-xs font-semibold">

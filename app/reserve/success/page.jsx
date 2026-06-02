@@ -40,7 +40,7 @@ function SuccessContent() {
       </div>
 
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-600 bg-clip-text text-transparent">
+        <h1 className="text-3xl font-bold tracking-tight text-[#272727]">
           Reservation Submitted!
         </h1>
         <p className="text-slate-400 text-xs max-w-md mx-auto leading-relaxed">

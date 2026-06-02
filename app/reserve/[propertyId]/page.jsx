@@ -18,6 +18,9 @@ import {
   Wallet
 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
+import PaymentTypeSelector from '@/components/payments/PaymentTypeSelector';
+import PaymentCalculator from '@/components/payments/PaymentCalculator';
+import { calculatePaymentPlan, formatPeso } from '@/lib/payments/paymentMath';
 
 export default function ReservePropertyPage() {
   const router = useRouter();
@@ -33,6 +36,11 @@ export default function ReservePropertyPage() {
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('gcash');
+  const [paymentType, setPaymentType] = useState('partial_payment');
+  const [downpaymentPercentage, setDownpaymentPercentage] = useState(20);
+  const [downpaymentAmount, setDownpaymentAmount] = useState('');
+  const [installmentTermMonths, setInstallmentTermMonths] = useState(24);
+  const [paymentAmount, setPaymentAmount] = useState('');
   const [receiptRef, setReceiptRef] = useState('');
   
   // Document Upload States (Simulated URL inputs for simplicity in local setups, backed by File API bindings)
@@ -121,8 +129,13 @@ export default function ReservePropertyPage() {
 
   useEffect(() => {
     if (propertyId) {
-      fetchProperty();
+      const timer = setTimeout(() => {
+        fetchProperty();
+      }, 0);
+
+      return () => clearTimeout(timer);
     }
+    return undefined;
   }, [propertyId, fetchProperty]);
 
   const handleBookingSubmit = async (e) => {
@@ -140,68 +153,45 @@ export default function ReservePropertyPage() {
     setError('');
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      const code = `RES-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-      
-      const reservationFee = property?.reservation_fee || 5000;
-      const expiresAt = new Date();
-      expiresAt.setHours(expiresAt.getHours() + 48); // Valid for 48 Hours
-
-      // 1. Create Reservation Record
-      const { data: res, error: resError } = await supabase
-        .from('reservations')
-        .insert({
-          reservation_code: code,
-          village_id: property?.village_id || 'mock-village-id',
-          property_id: property?.id || propertyId,
-          customer_id: user?.id || null, // Will map automatically via email trigger if guest
-          guest_name: user ? null : fullName,
-          guest_email: user ? null : email,
-          guest_phone: user ? null : phone,
-          status: 'pending_verification', // Receipt uploaded, awaiting accounting audit
-          reservation_fee: reservationFee,
-          expires_at: expiresAt.toISOString(),
-          reserved_at: new Date().toISOString()
-        })
-        .select()
-        .single();
-
-      if (resError) throw resError;
-
-      // 2. Create Payment Record (Simulated manual GCash/Maya upload)
-      const { error: payError } = await supabase
-        .from('payments')
-        .insert({
-          reservation_id: res.id,
-          village_id: property?.village_id || 'mock-village-id',
-          customer_id: user?.id || null,
-          amount: reservationFee,
-          payment_method: paymentMethod,
-          payment_status: 'pending_verification',
-          reference_number: receiptRef || `REF-${Math.floor(Math.random() * 1000000)}`,
-          proof_url: 'https://images.unsplash.com/photo-1554415707-6e8cfc93fe23?auto=format&fit=crop&w=400&q=80', // Dummy proof receipt asset
-          created_at: new Date().toISOString()
-        });
-
-      if (payError) throw payError;
-
-      // 3. Create ID and Income Documents
-      const docsPayload = [
-        { reservation_id: res.id, customer_id: user?.id || null, document_type: 'Valid Government ID', file_url: validIdUrl, status: 'pending' },
-        { reservation_id: res.id, customer_id: user?.id || null, document_type: 'Proof of Income', file_url: incomeProofUrl, status: 'pending' }
-      ];
-      await supabase.from('documents').insert(docsPayload);
-
-      // 4. Update Property Status to 'reserved'
-      if (property?.id && property.id !== 'mock-village-id') {
-        await supabase
-          .from('properties')
-          .update({ status: 'reserved' })
-          .eq('id', property.id);
+      const planPreview = calculatePaymentPlan({
+        propertyPrice: property?.price || 0,
+        reservationFee: property?.reservation_fee || 0,
+        paymentType,
+        downpaymentAmount,
+        downpaymentPercentage,
+        installmentTermMonths
+      });
+      const submittedAmount = Number(paymentAmount || planPreview.initialAmountDue);
+      if (submittedAmount > planPreview.initialAmountDue) {
+        throw new Error(`Payment amount cannot exceed ${formatPeso(planPreview.initialAmountDue)}.`);
       }
 
-      // 5. Navigate to Success Confirmation Page
-      router.push(`/reserve/success?reservation_code=${code}&email=${encodeURIComponent(email)}`);
+      const response = await fetch('/api/reservations/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          propertyId: property?.id || propertyId,
+          fullName,
+          email,
+          phone,
+          paymentMethod,
+          paymentType,
+          downpaymentAmount,
+          downpaymentPercentage,
+          installmentTermMonths,
+          submittedAmount,
+          receiptRef,
+          validIdUrl,
+          incomeProofUrl
+        })
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || 'Reservation could not be completed.');
+      }
+
+      router.push(`/reserve/success?reservation_code=${payload.reservationCode}&email=${encodeURIComponent(payload.email)}`);
     } catch (err) {
       console.error(err);
       setError(err.message || 'An unexpected error occurred during reservation. Please try again.');
@@ -326,6 +316,71 @@ export default function ReservePropertyPage() {
                 <hr className="border-slate-800/60 my-6" />
 
                 <h3 className="text-sm font-bold text-slate-200 mb-3 flex items-center gap-1.5">
+                  <Coins className="w-4.5 h-4.5 text-emerald-400" />
+                  Payment Option
+                </h3>
+
+                <PaymentTypeSelector value={paymentType} onChange={setPaymentType} />
+
+                {['partial_payment', 'installment'].includes(paymentType) && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                        Downpayment Percentage
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={downpaymentPercentage}
+                        onChange={(e) => setDownpaymentPercentage(e.target.value)}
+                        className="w-full bg-white border border-slate-800 rounded-xl py-2.5 px-4 text-[#272727] outline-none text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                        Fixed Downpayment Amount
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={downpaymentAmount}
+                        onChange={(e) => setDownpaymentAmount(e.target.value)}
+                        placeholder="Optional"
+                        className="w-full bg-white border border-slate-800 rounded-xl py-2.5 px-4 text-[#272727] outline-none text-sm"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {paymentType === 'installment' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                      Installment Term
+                    </label>
+                    <select
+                      value={installmentTermMonths}
+                      onChange={(e) => setInstallmentTermMonths(e.target.value)}
+                      className="w-full bg-white border border-slate-800 rounded-xl py-2.5 px-4 text-[#272727] outline-none text-sm"
+                    >
+                      <option value={6}>6 months</option>
+                      <option value={12}>12 months</option>
+                      <option value={24}>24 months</option>
+                      <option value={36}>36 months</option>
+                    </select>
+                  </div>
+                )}
+
+                <PaymentCalculator
+                  propertyPrice={property?.price || 0}
+                  reservationFee={property?.reservation_fee || 0}
+                  paymentType={paymentType}
+                  downpaymentAmount={downpaymentAmount}
+                  downpaymentPercentage={downpaymentPercentage}
+                  installmentTermMonths={installmentTermMonths}
+                />
+
+                <h3 className="text-sm font-bold text-slate-200 mb-3 flex items-center gap-1.5">
                   <Wallet className="w-4.5 h-4.5 text-emerald-400" />
                   Hold Deposit Fee Payment
                 </h3>
@@ -364,6 +419,36 @@ export default function ReservePropertyPage() {
                     onChange={(e) => setReceiptRef(e.target.value)}
                     placeholder="Enter transaction reference hash or number"
                     className="w-full bg-slate-950/50 border border-slate-800 focus:border-emerald-500/60 rounded-xl py-2.5 px-4 text-slate-200 placeholder-slate-600 outline-none text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                    Payment Amount
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    max={calculatePaymentPlan({
+                      propertyPrice: property?.price || 0,
+                      reservationFee: property?.reservation_fee || 0,
+                      paymentType,
+                      downpaymentAmount,
+                      downpaymentPercentage,
+                      installmentTermMonths
+                    }).initialAmountDue}
+                    value={paymentAmount}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                    placeholder={`Maximum: ${formatPeso(calculatePaymentPlan({
+                      propertyPrice: property?.price || 0,
+                      reservationFee: property?.reservation_fee || 0,
+                      paymentType,
+                      downpaymentAmount,
+                      downpaymentPercentage,
+                      installmentTermMonths
+                    }).initialAmountDue)}`}
+                    className="w-full bg-white border border-slate-800 rounded-xl py-2.5 px-4 text-[#272727] outline-none text-sm"
                   />
                 </div>
 

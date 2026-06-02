@@ -13,6 +13,22 @@ import Link from 'next/link';
 // Dynamically import CanvasStage with SSR disabled as Konva requires window context
 const CanvasStage = dynamic(() => import('./CanvasStage'), { ssr: false });
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function formatSupabaseError(err) {
+  if (!err) return 'Unknown Supabase error.';
+  if (typeof err === 'string') return err;
+
+  const parts = [
+    err.message,
+    err.details,
+    err.hint,
+    err.code ? `Code: ${err.code}` : ''
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(' ') : JSON.stringify(err);
+}
+
 export default function BlueprintEditor({ blueprintId, villageId }) {
   const supabase = createClient();
 
@@ -33,6 +49,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
   const [selectedObjectId, setSelectedObjectId] = useState(null);
   const [selectedObjectIds, setSelectedObjectIds] = useState([]);
   const [saveStatus, setSaveStatus] = useState(''); // 'saving', 'saved', 'error'
+  const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
     Promise.resolve().then(() => {
@@ -232,7 +249,14 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
   // 1. SAVE DRAFT
   const handleSaveDraft = async () => {
     setSaveStatus('saving');
+    setSaveError('');
     try {
+      const resolvedVillageId = blueprint?.village_id || villageId;
+
+      if (!resolvedVillageId) {
+        throw new Error('Cannot save blueprint objects because the village scope is missing.');
+      }
+
       // Synchronize database records. We will delete old ones and batch insert the current set.
       // This is the cleanest, most performant way to manage the object state batching.
       const { error: deleteError } = await supabase
@@ -242,10 +266,14 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
 
       if (deleteError) throw deleteError;
 
+      const linkedPropertyIds = objects
+        .map((obj) => obj.linked_property_id)
+        .filter(Boolean);
+
       if (objects.length > 0) {
         const insertPayload = objects.map(obj => {
           const payloadObj = {
-            village_id: villageId,
+            village_id: resolvedVillageId,
             blueprint_id: blueprintId,
             object_type: obj.object_type,
             object_data: obj.object_data,
@@ -268,7 +296,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
             obj.id.startsWith('zone-')
           );
 
-          if (!isNew) {
+          if (!isNew && UUID_RE.test(obj.id)) {
             payloadObj.id = obj.id;
           }
 
@@ -282,18 +310,47 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
         if (insertError) throw insertError;
       }
 
+      const { error: unlinkPropertiesError } = await supabase
+        .from('properties')
+        .update({ blueprint_object_id: null })
+        .eq('village_id', resolvedVillageId)
+        .not('blueprint_object_id', 'is', null);
+
+      if (unlinkPropertiesError) {
+        console.warn('Property link reset skipped:', formatSupabaseError(unlinkPropertiesError));
+      }
+
+      for (const propertyId of linkedPropertyIds) {
+        const linkedObject = objects.find((obj) => obj.linked_property_id === propertyId);
+        const persistedObjectId = UUID_RE.test(linkedObject?.id || '') ? linkedObject.id : null;
+
+        if (persistedObjectId) {
+          const { error: linkError } = await supabase
+            .from('properties')
+            .update({ blueprint_object_id: persistedObjectId })
+            .eq('id', propertyId);
+
+          if (linkError) {
+            console.warn('Property link sync skipped:', formatSupabaseError(linkError));
+          }
+        }
+      }
+
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus(''), 2500);
     } catch (err) {
-      console.error('Error saving draft:', err);
+      const message = formatSupabaseError(err);
+      console.error('Error saving draft:', message, err);
+      setSaveError(message);
       setSaveStatus('error');
-      throw err;
+      throw new Error(message);
     }
   };
 
   // 2. PUBLISH MAP
   const handlePublish = async () => {
     setSaveStatus('saving');
+    setSaveError('');
     try {
       // First save draft state
       await handleSaveDraft();
@@ -309,10 +366,13 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
 
       if (publishError) throw publishError;
 
+      setBlueprint((prev) => prev ? { ...prev, status: 'published', published_at: new Date().toISOString() } : prev);
       setSaveStatus('published');
       setTimeout(() => setSaveStatus(''), 3000);
     } catch (err) {
-      console.error('Error publishing blueprint:', err);
+      const message = formatSupabaseError(err);
+      console.error('Error publishing blueprint:', message, err);
+      setSaveError(message);
       setSaveStatus('error');
     }
   };
@@ -420,7 +480,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
           {saveStatus === 'error' && (
             <>
               <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-              <span className="text-red-400">Error synchronizing database.</span>
+              <span className="text-red-400">{saveError || 'Error synchronizing database.'}</span>
             </>
           )}
         </div>

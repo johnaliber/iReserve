@@ -8,7 +8,6 @@ import {
   Loader2, 
   Layers, 
   SlidersHorizontal, 
-  Map, 
   Coins, 
   Compass, 
   ShieldAlert, 
@@ -25,7 +24,17 @@ import Link from 'next/link';
 import { Stage, Layer, Line, Circle, Rect, Text, Group } from 'react-konva';
 
 
-export default function InteractiveVillageMap({ villageSlug, onPropertySelect, hideSidebar = false }) {
+export default function InteractiveVillageMap({
+  villageSlug,
+  onPropertySelect,
+  hideSidebar = false,
+  allowDemoFallback = true,
+  adminPropertyMode = false,
+  adminShowHidden = false,
+  preferDraftBlueprint = false,
+  showSmartAssistant = true,
+  onAdminObjectSelect
+}) {
   const supabase = createClient();
   const stageRef = useRef(null);
 
@@ -35,6 +44,7 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
   const [objects, setObjects] = useState([]);
   const [properties, setProperties] = useState([]);
   const [zoom, setZoom] = useState(0.85);
+  const [tooltip, setTooltip] = useState(null);
 
   // Overlays
   const [layers, setLayers] = useState({
@@ -64,6 +74,19 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
   const [recSunlightPreference, setRecSunlightPreference] = useState('morning');
   const [recommendations, setRecommendations] = useState([]);
 
+  const panelClass = adminPropertyMode
+    ? 'rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-sm'
+    : 'bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg glass-card';
+  const panelTitleClass = adminPropertyMode
+    ? 'text-xs font-extrabold text-[#272727] uppercase tracking-wider mb-4 border-b border-[#e2e8f0] pb-3'
+    : 'text-xs font-bold text-slate-350 uppercase tracking-wider mb-4 border-b border-slate-800 pb-2';
+  const filterControlClass = adminPropertyMode
+    ? 'w-full rounded-lg border border-[#dbe4ee] bg-white p-2.5 text-sm text-[#272727] shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15'
+    : 'w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 outline-none text-slate-350 cursor-pointer';
+  const labelClass = adminPropertyMode
+    ? 'block text-[10px] text-[#64748b] uppercase tracking-wider mb-1.5 font-bold'
+    : 'block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5';
+
   const fetchMapData = useCallback(async () => {
     setLoading(true);
     try {
@@ -75,6 +98,14 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
         .single();
 
       if (vError || !v) {
+        if (!allowDemoFallback) {
+          setVillage(null);
+          setProperties([]);
+          setObjects([]);
+          setLoading(false);
+          return;
+        }
+
         console.warn('Village not found in database, loading mock data templates for preview.');
         setVillage({
           id: 'mock-1',
@@ -90,13 +121,19 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
       
       setVillage(v);
 
-      // 2. Fetch published blueprint
-      const { data: bp } = await supabase
+      // 2. Fetch blueprint
+      let blueprintQuery = supabase
         .from('blueprints')
         .select('id')
         .eq('village_id', v.id)
-        .eq('status', 'published')
-        .single();
+        .order('updated_at', { ascending: false })
+        .limit(1);
+
+      blueprintQuery = preferDraftBlueprint
+        ? blueprintQuery.in('status', ['draft', 'published'])
+        : blueprintQuery.eq('status', 'published');
+
+      const { data: bp } = await blueprintQuery.maybeSingle();
 
       // 3. Fetch properties
       const { data: props } = await supabase
@@ -104,7 +141,7 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
         .select('*')
         .eq('village_id', v.id);
 
-      const loadedProps = props || [];
+      const loadedProps = (props || []).filter((prop) => adminShowHidden || prop.status !== 'hidden');
       setProperties(loadedProps);
 
       if (bp) {
@@ -116,12 +153,18 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
 
         setObjects(objs || []);
       } else {
-        // Fallback demo elements if no blueprints exist yet
-        setObjects(getMockObjects(v.id));
+        setObjects(allowDemoFallback ? getMockObjects(v.id) : []);
       }
 
     } catch (err) {
       console.error('Error loading interactive map data:', err);
+      if (!allowDemoFallback) {
+        setVillage(null);
+        setProperties([]);
+        setObjects([]);
+        return;
+      }
+
       // Robust recovery fallback state
       setVillage({
         id: 'mock-1',
@@ -134,12 +177,17 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
     } finally {
       setLoading(false);
     }
-  }, [villageSlug, supabase]);
+  }, [villageSlug, supabase, allowDemoFallback, adminShowHidden, preferDraftBlueprint]);
 
   useEffect(() => {
     if (villageSlug) {
-      fetchMapData();
+      const timer = setTimeout(() => {
+        fetchMapData();
+      }, 0);
+
+      return () => clearTimeout(timer);
     }
+    return undefined;
   }, [villageSlug, fetchMapData]);
 
 
@@ -148,6 +196,8 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
   // Helper properties list if none are configured in database
   const getDisplayedProperties = () => {
     if (properties.length > 0) return properties;
+    if (!allowDemoFallback) return [];
+
     return [
       { id: 'mock-prop-1', property_code: 'ERR-B1L1', block_number: '1', lot_number: '1', price: 4500000, reservation_fee: 5000, lot_size: 120, floor_area: 85, bedrooms: 3, bathrooms: 2, parking_slots: 1, orientation: 'East', flood_risk: 'low', sunlight_exposure: 'morning', status: 'available' },
       { id: 'mock-prop-2', property_code: 'ERR-B1L2', block_number: '1', lot_number: '2', price: 4200000, reservation_fee: 5000, lot_size: 110, floor_area: 75, bedrooms: 2, bathrooms: 1, parking_slots: 1, orientation: 'East', flood_risk: 'medium', sunlight_exposure: 'balanced', status: 'reserved' },
@@ -156,19 +206,29 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
   };
 
   const displayedProps = getDisplayedProperties();
+  const displayedPropsById = new Map(displayedProps.map((prop) => [prop.id, prop]));
+  const displayedPropsByObjectId = new Map(
+    displayedProps
+      .filter((prop) => prop.blueprint_object_id)
+      .map((prop) => [prop.blueprint_object_id, prop])
+  );
+
+  const getPropertyForObject = (object) => {
+    if (!object) return null;
+    return displayedPropsById.get(object.linked_property_id) || displayedPropsByObjectId.get(object.id) || null;
+  };
 
   // Find dynamic property status color mapping
-  const getLotFillColor = (linkedPropId, defaultFill) => {
-    if (!linkedPropId) return defaultFill || '#64748b'; // gray if unlinked
-    
-    const prop = displayedProps.find(p => p.id === linkedPropId);
-    if (!prop) return defaultFill || '#64748b';
+  const getLotFillColor = (lot, defaultFill) => {
+    const prop = getPropertyForObject(lot);
+    if (!prop) return adminPropertyMode ? '#cbd5e1' : (defaultFill || '#64748b');
 
     switch (prop.status) {
       case 'available': return '#10b981'; // Green
       case 'reserved': return '#f59e0b'; // Amber
       case 'sold': return '#ef4444'; // Red
       case 'under_maintenance': return '#64748b'; // Gray
+      case 'hidden': return '#94a3b8';
       default: return '#3b82f6'; // Blue for Viewing
     }
   };
@@ -184,6 +244,40 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
       setSelectedProperty(prop);
       setIsModalOpen(true);
     }
+  };
+
+  const handleBlueprintObjectClick = (object) => {
+    const prop = getPropertyForObject(object);
+
+    if (adminPropertyMode) {
+      onAdminObjectSelect?.(object, prop);
+      return;
+    }
+
+    if (prop?.id) {
+      handleLotClick(prop.id);
+    }
+  };
+
+  const setStageCursor = (cursor) => {
+    const stage = stageRef.current;
+    if (stage) {
+      stage.container().style.cursor = cursor;
+    }
+  };
+
+  const updateTooltipPosition = (object) => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+
+    setTooltip({
+      x: pointer.x,
+      y: pointer.y,
+      object,
+      property: getPropertyForObject(object)
+    });
   };
 
   // 1. FILTERING SYSTEM
@@ -281,8 +375,8 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
         <div className="w-full lg:w-80 flex flex-col gap-6 flex-shrink-0">
         
         {/* Map Legend */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg glass-card select-none">
-          <h4 className="text-xs font-bold text-slate-350 uppercase tracking-wider mb-4 border-b border-slate-800 pb-2">
+        <div className={`${panelClass} select-none`}>
+          <h4 className={panelTitleClass}>
             Status Legend
           </h4>
           <div className="grid grid-cols-2 gap-3 text-xs font-medium">
@@ -306,13 +400,13 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
         </div>
 
         {/* Dynamic Filters */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg glass-card">
-          <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-2">
-            <h4 className="text-xs font-bold text-slate-350 uppercase tracking-wider flex items-center gap-1.5">
+        <div className={panelClass}>
+          <div className={`flex items-center justify-between mb-4 border-b pb-3 ${adminPropertyMode ? 'border-[#e2e8f0]' : 'border-slate-800'}`}>
+            <h4 className="text-xs font-extrabold text-[#272727] uppercase tracking-wider flex items-center gap-1.5">
               <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-400" />
               Blueprint Filters
             </h4>
-            {showRecommendation && (
+            {showSmartAssistant && showRecommendation && (
               <button 
                 onClick={() => setShowRecommendation(false)}
                 className="text-[10px] text-emerald-400 font-semibold hover:underline cursor-pointer"
@@ -322,14 +416,14 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
             )}
           </div>
 
-          {!showRecommendation ? (
+          {!showSmartAssistant || !showRecommendation ? (
             <div className="space-y-4 text-xs font-medium">
               <div>
-                <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Status</label>
+                <label className={labelClass}>Status</label>
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 outline-none text-slate-350 cursor-pointer"
+                  className={filterControlClass}
                 >
                   <option value="">All Statuses</option>
                   <option value="available">Available (Green)</option>
@@ -339,11 +433,11 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
               </div>
 
               <div>
-                <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Max Budget</label>
+                <label className={labelClass}>Max Budget</label>
                 <select
                   value={maxPrice}
                   onChange={(e) => setMaxPrice(parseInt(e.target.value))}
-                  className="w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 outline-none text-slate-350 cursor-pointer"
+                  className={filterControlClass}
                 >
                   <option value={10000000}>₱10,000,000 max</option>
                   <option value={6000000}>₱6,000,000 max</option>
@@ -353,22 +447,22 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
               </div>
 
               <div>
-                <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Min Bedrooms</label>
+                <label className={labelClass}>Min Bedrooms</label>
                 <input
                   type="number"
                   min="0"
                   value={minRooms}
                   onChange={(e) => setMinRooms(parseInt(e.target.value) || 0)}
-                  className="w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 outline-none text-slate-300"
+                  className={filterControlClass}
                 />
               </div>
 
               <div>
-                <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Flood risk</label>
+                <label className={labelClass}>Flood risk</label>
                 <select
                   value={floodRiskFilter}
                   onChange={(e) => setFloodRiskFilter(e.target.value)}
-                  className="w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 outline-none text-slate-350 cursor-pointer"
+                  className={filterControlClass}
                 >
                   <option value="">Any Risk Level</option>
                   <option value="low">Low Risk</option>
@@ -376,13 +470,15 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
                 </select>
               </div>
 
-              <button
-                onClick={() => setShowRecommendation(true)}
-                className="w-full flex items-center justify-center gap-1.5 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white py-2.5 rounded-xl text-xs font-semibold shadow transition cursor-pointer"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                Launch Smart Assistant
-              </button>
+              {showSmartAssistant && (
+                <button
+                  onClick={() => setShowRecommendation(true)}
+                  className="w-full flex items-center justify-center gap-1.5 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white py-2.5 rounded-xl text-xs font-semibold shadow transition cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                  Launch Smart Assistant
+                </button>
+              )}
             </div>
           ) : (
             /* AI / Rule-based Assistant Panel */
@@ -532,18 +628,34 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
           <Layer>
             {objects
               .filter(o => o.object_type === 'lot' || o.object_type === 'house')
+              .filter((lot) => {
+                const prop = getPropertyForObject(lot);
+                return adminPropertyMode || prop?.status !== 'hidden';
+              })
               .map((lot) => {
                 const data = lot.object_data || {};
-                const isLinked = !!lot.linked_property_id;
+                const isClickable = adminPropertyMode || !!getPropertyForObject(lot);
                 
                 // Fetch dynamic status color overrides
-                const fill = getLotFillColor(lot.linked_property_id, data.fillColor);
+                const fill = getLotFillColor(lot, data.fillColor);
                 
                 return (
                   <Group
                     key={lot.id}
-                    onClick={() => isLinked && handleLotClick(lot.linked_property_id)}
-                    className="cursor-pointer"
+                    onClick={() => isClickable && handleBlueprintObjectClick(lot)}
+                    onTap={() => isClickable && handleBlueprintObjectClick(lot)}
+                    onMouseEnter={() => {
+                      if (!isClickable) return;
+                      setStageCursor('pointer');
+                      updateTooltipPosition(lot);
+                    }}
+                    onMouseMove={() => {
+                      if (isClickable) updateTooltipPosition(lot);
+                    }}
+                    onMouseLeave={() => {
+                      setStageCursor('grab');
+                      setTooltip(null);
+                    }}
                   >
                     <Line
                       points={data.points || []}
@@ -560,7 +672,7 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
                         y={data.points[1] - 12}
                         fontSize={10}
                         fontStyle="bold"
-                        fill="#f8fafc"
+                        fill="#272727"
                       />
                     )}
                   </Group>
@@ -647,7 +759,7 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
                     x={data.x || 0}
                     y={data.y || 0}
                     text={data.text || ''}
-                    fill={data.fill || '#ffffff'}
+                    fill={data.fill || '#272727'}
                     fontSize={data.fontSize || 12}
                     fontStyle="bold"
                   />
@@ -655,6 +767,26 @@ export default function InteractiveVillageMap({ villageSlug, onPropertySelect, h
               })}
           </Layer>
         </Stage>
+        {tooltip && (
+          <div
+            className="pointer-events-none absolute z-20 min-w-56 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-[#272727] shadow-xl"
+            style={{ left: tooltip.x + 18, top: tooltip.y + 18 }}
+          >
+            {tooltip.property ? (
+              <div className="space-y-1">
+                <div className="font-extrabold text-[#272727]">{tooltip.property.property_code}</div>
+                <div>Block {tooltip.property.block_number} Lot {tooltip.property.lot_number}</div>
+                <div className="capitalize">Status: {tooltip.property.status?.replaceAll('_', ' ')}</div>
+                <div>Price: ₱{Number(tooltip.property.price || 0).toLocaleString()}</div>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <div className="font-extrabold text-[#272727]">{tooltip.object?.object_data?.name || 'Unlinked lot'}</div>
+                <div>No property details yet</div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 3. Details Dialog Modal Popup */}

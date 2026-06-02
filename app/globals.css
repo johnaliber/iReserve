@@ -2,25 +2,25 @@
 
 :root {
   --background: #f8fafc;
-  --foreground: #0f172a;
+  --foreground: #272727;
   
   --card: #ffffff;
-  --card-foreground: #0f172a;
+  --card-foreground: #272727;
   
   --popover: #ffffff;
-  --popover-foreground: #0f172a;
+  --popover-foreground: #272727;
   
   --primary: #10b981;
   --primary-foreground: #ffffff;
   
   --secondary: #f1f5f9;
-  --secondary-foreground: #0f172a;
+  --secondary-foreground: #272727;
   
   --muted: #f8fafc;
   --muted-foreground: #64748b;
   
   --accent: #e2e8f0;
-  --accent-foreground: #0f172a;
+  --accent-foreground: #272727;
   
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
@@ -78,6 +78,80 @@ body {
   color: var(--foreground);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   overflow-x: hidden;
+}
+
+input,
+select,
+textarea,
+button {
+  color: #272727;
+}
+
+::placeholder {
+  color: #272727;
+  opacity: 0.65;
+}
+
+/* Keep text readable on the light interface without changing white/black backgrounds. */
+.text-white,
+.text-black,
+.text-slate-50,
+.text-slate-100,
+.text-slate-200,
+.text-slate-250,
+.text-slate-300,
+.text-slate-350,
+.text-slate-400,
+.text-slate-450,
+.text-slate-500,
+.text-slate-550,
+.text-slate-600,
+.text-slate-650,
+.text-slate-700,
+.text-slate-800,
+.text-slate-900,
+.text-slate-950 {
+  color: #272727;
+}
+
+.hover\:text-white:hover,
+.hover\:text-black:hover,
+.hover\:text-slate-50:hover,
+.hover\:text-slate-100:hover,
+.hover\:text-slate-200:hover,
+.hover\:text-slate-300:hover,
+.hover\:text-slate-400:hover,
+.hover\:text-slate-500:hover,
+.hover\:text-slate-600:hover,
+.hover\:text-slate-700:hover,
+.hover\:text-slate-800:hover,
+.hover\:text-slate-900:hover,
+.hover\:text-slate-950:hover,
+.group:hover .group-hover\:text-slate-200,
+.group:hover .group-hover\:text-slate-300,
+.group:hover .group-hover\:text-slate-400 {
+  color: #272727;
+}
+
+.placeholder\:text-white::placeholder,
+.placeholder\:text-black::placeholder,
+.placeholder\:text-slate-50::placeholder,
+.placeholder\:text-slate-100::placeholder,
+.placeholder\:text-slate-200::placeholder,
+.placeholder\:text-slate-300::placeholder,
+.placeholder\:text-slate-400::placeholder,
+.placeholder\:text-slate-500::placeholder,
+.placeholder\:text-slate-600::placeholder,
+.placeholder-slate-50::placeholder,
+.placeholder-slate-100::placeholder,
+.placeholder-slate-200::placeholder,
+.placeholder-slate-300::placeholder,
+.placeholder-slate-400::placeholder,
+.placeholder-slate-500::placeholder,
+.placeholder-slate-600::placeholder,
+.placeholder-slate-650::placeholder {
+  color: #272727;
+  opacity: 0.65;
 }
 
 /* Glassmorphism Styles for Light Mode */

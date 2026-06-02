@@ -111,6 +111,8 @@ CREATE TABLE public.properties (
     status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'reserved', 'sold', 'under_maintenance', 'hidden')),
     thumbnail_url TEXT,
     floor_plan_url TEXT,
+    notes TEXT,
+    maintenance_reason TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     UNIQUE(village_id, block_number, lot_number)
@@ -151,6 +153,63 @@ CREATE TABLE public.reservations (
     reserved_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     approved_at TIMESTAMP WITH TIME ZONE,
     cancelled_at TIMESTAMP WITH TIME ZONE,
+    payment_type TEXT CHECK (payment_type IN ('full_payment', 'partial_payment', 'installment')),
+    total_contract_price NUMERIC(15, 2),
+    downpayment_amount NUMERIC(15, 2),
+    downpayment_percentage NUMERIC(5, 2),
+    initial_amount_due NUMERIC(15, 2),
+    amount_paid NUMERIC(15, 2) DEFAULT 0,
+    remaining_balance NUMERIC(15, 2),
+    installment_term_months INT,
+    monthly_payment NUMERIC(15, 2),
+    next_due_date DATE,
+    payment_plan_status TEXT DEFAULT 'not_started' CHECK (payment_plan_status IN ('not_started', 'pending_initial_payment', 'active', 'downpayment_completed', 'fully_paid', 'overdue', 'cancelled', 'defaulted')),
+    payment_amount_indicator TEXT DEFAULT 'not_paid' CHECK (payment_amount_indicator IN ('not_paid', 'insufficient_payment', 'initial_payment_completed', 'partially_paid', 'fully_paid', 'overdue', 'overpaid')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+CREATE TABLE public.payment_plans (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    reservation_id UUID NOT NULL REFERENCES public.reservations(id) ON DELETE CASCADE,
+    customer_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    village_id UUID NOT NULL REFERENCES public.villages(id) ON DELETE CASCADE,
+    property_id UUID NOT NULL REFERENCES public.properties(id) ON DELETE CASCADE,
+    payment_type TEXT NOT NULL CHECK (payment_type IN ('full_payment', 'partial_payment', 'installment')),
+    total_contract_price NUMERIC(15, 2) NOT NULL,
+    reservation_fee NUMERIC(15, 2) NOT NULL,
+    downpayment_amount NUMERIC(15, 2) DEFAULT 0,
+    downpayment_percentage NUMERIC(5, 2) DEFAULT 0,
+    initial_amount_due NUMERIC(15, 2) NOT NULL,
+    principal_balance NUMERIC(15, 2) NOT NULL,
+    amount_paid NUMERIC(15, 2) DEFAULT 0,
+    remaining_balance NUMERIC(15, 2) NOT NULL,
+    installment_term_months INT,
+    monthly_payment NUMERIC(15, 2),
+    interest_rate NUMERIC(5, 2) DEFAULT 0,
+    start_date DATE,
+    next_due_date DATE,
+    initial_payment_progress NUMERIC(6, 2) DEFAULT 0,
+    total_payment_progress NUMERIC(6, 2) DEFAULT 0,
+    payment_amount_indicator TEXT DEFAULT 'not_paid' CHECK (payment_amount_indicator IN ('not_paid', 'insufficient_payment', 'initial_payment_completed', 'partially_paid', 'fully_paid', 'overdue', 'overpaid')),
+    overdue_count INT DEFAULT 0,
+    last_payment_date TIMESTAMP WITH TIME ZONE,
+    status TEXT NOT NULL DEFAULT 'pending_initial_payment' CHECK (status IN ('pending_initial_payment', 'active', 'downpayment_completed', 'fully_paid', 'overdue', 'cancelled', 'defaulted')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+CREATE TABLE public.payment_schedule (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    payment_plan_id UUID NOT NULL REFERENCES public.payment_plans(id) ON DELETE CASCADE,
+    reservation_id UUID NOT NULL REFERENCES public.reservations(id) ON DELETE CASCADE,
+    due_number INT NOT NULL,
+    due_date DATE NOT NULL,
+    amount_due NUMERIC(15, 2) NOT NULL,
+    amount_paid NUMERIC(15, 2) DEFAULT 0,
+    remaining_due NUMERIC(15, 2) NOT NULL,
+    status TEXT NOT NULL DEFAULT 'unpaid' CHECK (status IN ('unpaid', 'partially_paid', 'paid', 'overdue', 'waived', 'cancelled')),
+    paid_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
@@ -161,16 +220,26 @@ CREATE TABLE public.reservations (
 CREATE TABLE public.payments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     reservation_id UUID NOT NULL REFERENCES public.reservations(id) ON DELETE CASCADE,
+    payment_plan_id UUID REFERENCES public.payment_plans(id) ON DELETE SET NULL,
+    payment_schedule_id UUID REFERENCES public.payment_schedule(id) ON DELETE SET NULL,
     village_id UUID NOT NULL REFERENCES public.villages(id) ON DELETE CASCADE,
     customer_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     amount NUMERIC(15, 2) NOT NULL,
     payment_method TEXT NOT NULL CHECK (payment_method IN ('gcash', 'maya', 'bank_transfer', 'cash', 'paymongo', 'manual_upload')),
     payment_status TEXT NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('unpaid', 'pending_verification', 'verified', 'rejected', 'refunded', 'partially_paid', 'overdue')),
+    payment_purpose TEXT DEFAULT 'reservation_fee' CHECK (payment_purpose IN ('reservation_fee', 'downpayment', 'full_payment', 'monthly_installment', 'partial_balance_payment', 'refund')),
     reference_number TEXT,
     official_receipt_number TEXT,
     proof_url TEXT,
     accounting_notes TEXT,
     rejection_reason TEXT,
+    maximum_payable_amount NUMERIC(15, 2),
+    submitted_amount NUMERIC(15, 2),
+    accepted_amount NUMERIC(15, 2),
+    excess_amount NUMERIC(15, 2) DEFAULT 0,
+    is_overpayment BOOLEAN DEFAULT FALSE,
+    overpayment_handled_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    overpayment_note TEXT,
     verified_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     verified_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
@@ -226,6 +295,10 @@ CREATE TABLE public.inquiries (
     phone TEXT,
     message TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'in_progress', 'resolved', 'closed')),
+    payment_type TEXT CHECK (payment_type IN ('full_payment', 'partial_payment', 'installment')),
+    preferred_installment_term INT,
+    estimated_budget NUMERIC(15, 2),
+    inquiry_status TEXT DEFAULT 'new',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
@@ -287,6 +360,8 @@ ALTER TABLE public.blueprint_objects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.properties ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.property_images ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reservations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.payment_plans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.payment_schedule ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.site_viewings ENABLE ROW LEVEL SECURITY;
@@ -380,6 +455,9 @@ CREATE POLICY blueprints_read_admin ON public.blueprints FOR SELECT TO authentic
 -- --- blueprint_objects POLICIES ---
 CREATE POLICY blueprint_objects_super_admin ON public.blueprint_objects FOR ALL TO authenticated USING (public.is_super_admin());
 CREATE POLICY blueprint_objects_architect_all ON public.blueprint_objects FOR ALL TO authenticated USING (public.has_village_role(village_id, 'architect'));
+CREATE POLICY blueprint_objects_village_admin_link_update ON public.blueprint_objects FOR UPDATE TO authenticated
+    USING (public.has_village_role(village_id, 'village_admin'))
+    WITH CHECK (public.has_village_role(village_id, 'village_admin'));
 CREATE POLICY blueprint_objects_read_public ON public.blueprint_objects FOR SELECT TO public USING (
     EXISTS (SELECT 1 FROM public.blueprints WHERE id = blueprint_id AND status = 'published')
 );
@@ -388,6 +466,9 @@ CREATE POLICY blueprint_objects_read_admin ON public.blueprint_objects FOR SELEC
 -- --- properties POLICIES ---
 CREATE POLICY properties_super_admin ON public.properties FOR ALL TO authenticated USING (public.is_super_admin());
 CREATE POLICY properties_admin_all ON public.properties FOR ALL TO authenticated USING (public.has_village_role(village_id, 'village_admin'));
+CREATE POLICY properties_customer_reserve_update ON public.properties FOR UPDATE TO authenticated
+    USING (status = 'available')
+    WITH CHECK (status = 'reserved');
 CREATE POLICY properties_read_public ON public.properties FOR SELECT TO public USING (status != 'hidden');
 CREATE POLICY properties_read_admin ON public.properties FOR SELECT TO authenticated USING (public.has_village_access(village_id));
 
@@ -406,6 +487,24 @@ CREATE POLICY reservations_admin_read_write ON public.reservations FOR ALL TO au
 CREATE POLICY reservations_customer_read_write ON public.reservations FOR SELECT TO authenticated USING (customer_id = auth.uid());
 CREATE POLICY reservations_customer_insert ON public.reservations FOR INSERT TO authenticated WITH CHECK (customer_id = auth.uid());
 CREATE POLICY reservations_guest_insert ON public.reservations FOR INSERT TO public WITH CHECK (customer_id IS NULL);
+
+-- --- payment_plans POLICIES ---
+CREATE POLICY payment_plans_super_admin ON public.payment_plans FOR ALL TO authenticated USING (public.is_super_admin());
+CREATE POLICY payment_plans_admin_read ON public.payment_plans FOR SELECT TO authenticated USING (public.has_village_access(village_id));
+CREATE POLICY payment_plans_accounting_all ON public.payment_plans FOR ALL TO authenticated USING (public.has_village_role(village_id, 'accounting'));
+CREATE POLICY payment_plans_customer_read ON public.payment_plans FOR SELECT TO authenticated USING (customer_id = auth.uid());
+
+-- --- payment_schedule POLICIES ---
+CREATE POLICY payment_schedule_super_admin ON public.payment_schedule FOR ALL TO authenticated USING (public.is_super_admin());
+CREATE POLICY payment_schedule_admin_read ON public.payment_schedule FOR SELECT TO authenticated USING (
+    EXISTS (SELECT 1 FROM public.payment_plans WHERE id = payment_plan_id AND public.has_village_access(village_id))
+);
+CREATE POLICY payment_schedule_accounting_all ON public.payment_schedule FOR ALL TO authenticated USING (
+    EXISTS (SELECT 1 FROM public.payment_plans WHERE id = payment_plan_id AND public.has_village_role(village_id, 'accounting'))
+);
+CREATE POLICY payment_schedule_customer_read ON public.payment_schedule FOR SELECT TO authenticated USING (
+    EXISTS (SELECT 1 FROM public.payment_plans WHERE id = payment_plan_id AND customer_id = auth.uid())
+);
 
 -- --- payments POLICIES ---
 CREATE POLICY payments_super_admin ON public.payments FOR ALL TO authenticated USING (public.is_super_admin());
@@ -437,6 +536,7 @@ CREATE POLICY notifications_user_all ON public.notifications FOR ALL TO authenti
 
 -- --- audit_logs POLICIES ---
 CREATE POLICY audit_logs_super_admin ON public.audit_logs FOR ALL TO authenticated USING (public.is_super_admin());
+CREATE POLICY audit_logs_admin_insert ON public.audit_logs FOR INSERT TO authenticated WITH CHECK (public.has_village_access(village_id));
 CREATE POLICY audit_logs_admin_read ON public.audit_logs FOR SELECT TO authenticated USING (public.has_village_access(village_id));
 
 -- --- refunds POLICIES ---

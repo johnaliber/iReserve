@@ -1,0 +1,29 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Supabase: Login",
+      "type": "shell",
+      "command": "npx.cmd supabase login",
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: Link Project",
+      "type": "shell",
+      "command": "npx.cmd supabase link --project-ref hxjfeoyqlclpmmckelwx",
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: Push DB Migrations",
+      "type": "shell",
+      "command": "npm run db:push",
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: Pull Remote Schema",
+      "type": "shell",
+      "command": "npm run db:pull",
+      "problemMatcher": []
+    }
+  ]
+}

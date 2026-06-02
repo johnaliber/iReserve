@@ -73,8 +73,8 @@ export default function RegisterPage() {
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mb-4 shadow-lg shadow-emerald-500/5">
             <Building className="w-6 h-6" />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-600 bg-clip-text text-transparent">
-            Join iReserve
+          <h1 className="text-3xl font-bold tracking-tight text-[#272727]">
+            Join <span className="text-emerald-600">iReserve</span>
           </h1>
           <p className="text-slate-400 text-sm mt-2">
             Create an account to browse and reserve property blueprints
