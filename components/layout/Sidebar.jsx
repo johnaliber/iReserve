@@ -8,7 +8,6 @@ import {
   BarChart,
   Building,
   Calendar,
-  ChevronDown,
   CreditCard,
   Home,
   Inbox,
@@ -34,7 +33,6 @@ export default function Sidebar({ isOpen, isCollapsed = false, onClose }) {
   const pathname = usePathname();
   const supabase = createClient();
   const [profile, setProfile] = useState(null);
-  const [accountsOpen, setAccountsOpen] = useState(false);
 
   useEffect(() => {
     async function fetchProfile() {
@@ -60,7 +58,7 @@ export default function Sidebar({ isOpen, isCollapsed = false, onClose }) {
       { name: 'Dashboard', href: '/super-admin/dashboard', icon: LayoutDashboard },
       { name: 'Villages / Properties', href: '/village-admin/properties', icon: Building },
       { name: 'Reservations / Siteviewings', href: '/village-admin/reservations', icon: Calendar },
-      { name: 'Payments / Booking Audit', href: '/village-admin/payments-booking-audit', icon: CreditCard },
+      { name: 'Payments / Booking Audit', href: '/accounting/dashboard', icon: CreditCard },
       { name: 'Reports', href: '/village-admin/reports', icon: BarChart },
       { name: 'Map Canvas Editor', href: '/architect/dashboard', icon: PencilRuler },
       { name: 'Customer View Hub', href: '/super-admin/customer-view-hub', icon: Users },
@@ -95,14 +93,9 @@ export default function Sidebar({ isOpen, isCollapsed = false, onClose }) {
   };
 
   const links = linksByRole[role] || [];
-  const accountLinks = [
-    { name: 'Customers', href: '/super-admin/accounts/customers' },
-    { name: 'Admins', href: '/super-admin/accounts/admins' },
-    { name: 'Accounting', href: '/super-admin/accounts/accounting' },
-    { name: 'Architects', href: '/super-admin/accounts/architects' }
-  ];
 
-  const canManageAccounts = role === 'super_admin';
+  const canManageAccounts = role === 'super_admin' || role === 'village_admin';
+  const accountsHref = role === 'super_admin' ? '/super-admin/accounts' : '/village-admin/accounts';
 
   return (
     <>
@@ -150,38 +143,23 @@ export default function Sidebar({ isOpen, isCollapsed = false, onClose }) {
             })}
 
             {canManageAccounts && (
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setAccountsOpen((current) => !current)}
-                  className={`flex min-h-11 w-full items-center gap-3 rounded-xl border border-transparent px-3 text-sm font-bold text-[#64748b] transition hover:border-[#e2e8f0] hover:bg-[#f8fafc] hover:text-[#272727] ${
-                    isCollapsed ? 'justify-center' : ''
-                  }`}
-                  title={isCollapsed ? 'Manage Accounts' : undefined}
-                >
-                  <Users className="h-4.5 w-4.5 flex-shrink-0 text-[#94a3b8]" />
-                  {!isCollapsed && (
-                    <>
-                      <span className="flex-1 text-left">Manage Accounts</span>
-                      <ChevronDown className={`h-4 w-4 transition ${accountsOpen ? 'rotate-180' : ''}`} />
-                    </>
-                  )}
-                </button>
-                {!isCollapsed && accountsOpen && (
-                  <div className="ml-6 mt-1 space-y-1 border-l border-[#e2e8f0] pl-3">
-                    {accountLinks.map((link) => (
-                      <Link
-                        key={link.name}
-                        href={link.href}
-                        onClick={onClose}
-                        className="block rounded-lg px-3 py-2 text-xs font-bold text-[#64748b] transition hover:bg-[#f8fafc] hover:text-[#272727]"
-                      >
-                        {link.name}
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <Link
+                href={accountsHref}
+                onClick={onClose}
+                title={isCollapsed ? 'Manage Accounts' : undefined}
+                className={`flex min-h-11 items-center gap-3 rounded-xl border px-3 text-sm font-bold transition ${
+                  pathname === accountsHref || pathname.startsWith(`${accountsHref}/`)
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : 'border-transparent text-[#64748b] hover:border-[#e2e8f0] hover:bg-[#f8fafc] hover:text-[#272727]'
+                } ${isCollapsed ? 'justify-center' : ''}`}
+              >
+                <Users className={`h-4.5 w-4.5 flex-shrink-0 ${
+                  pathname === accountsHref || pathname.startsWith(`${accountsHref}/`)
+                    ? 'text-emerald-600'
+                    : 'text-[#94a3b8]'
+                }`} />
+                {!isCollapsed && <span>Manage Accounts</span>}
+              </Link>
             )}
           </nav>
         </div>

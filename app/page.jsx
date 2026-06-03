@@ -1,8 +1,9 @@
 import React from 'react';
 import { createClient } from '@/lib/supabase/server';
+import { getCurrentUser } from '@/lib/auth/getCurrentUser';
 import VillageCard from '@/components/public/VillageCard';
 import Navbar from '@/components/layout/Navbar';
-import { Map, ShieldAlert, Sparkles, Navigation, Layers, Compass, HelpCircle } from 'lucide-react';
+import { Map, ShieldAlert, Sparkles, Navigation, Layers, Compass, HelpCircle, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
 // Enable dynamic rendering
@@ -26,6 +27,17 @@ export default async function HomePage() {
     console.error('Error fetching villages on homepage:', err);
     error = err;
   }
+
+  // Check if current user is an admin for the back button
+  let adminDashHref = null;
+  try {
+    const currentUser = await getCurrentUser();
+    const role = currentUser?.profile?.role;
+    if (role === 'super_admin') adminDashHref = '/super-admin/dashboard';
+    else if (role === 'village_admin') adminDashHref = '/village-admin/dashboard';
+  } catch (e) {
+    // Not logged in or error — no back button
+  }
   
   const displayedVillages = villages.length > 0 ? villages : mockVillages;
 
@@ -37,6 +49,19 @@ export default async function HomePage() {
 
       {/* Global navbar header */}
       <Navbar />
+
+      {/* Back to Dashboard button for logged-in admins */}
+      {adminDashHref && (
+        <div className="relative z-20 px-4 md:px-8 max-w-7xl mx-auto w-full pt-4">
+          <Link
+            href={adminDashHref}
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-emerald-500/30 hover:bg-slate-800/80 text-slate-300 hover:text-emerald-400 font-semibold text-xs px-4 py-2.5 transition duration-200 shadow-lg"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Dashboard
+          </Link>
+        </div>
+      )}
 
       {/* 1. Hero Section */}
       <section className="relative pt-20 pb-16 px-4 md:px-8 max-w-7xl mx-auto text-center z-10">

@@ -1,6 +1,8 @@
 -- iReserve payment plans, payment schedules, indicators, and overpayment support.
 -- Safe to run against an existing project: columns/tables are guarded with IF NOT EXISTS.
 
+
+
 ALTER TABLE public.inquiries
 ADD COLUMN IF NOT EXISTS payment_type TEXT,
 ADD COLUMN IF NOT EXISTS preferred_installment_term INT,
@@ -22,7 +24,7 @@ ADD COLUMN IF NOT EXISTS payment_plan_status TEXT DEFAULT 'not_started',
 ADD COLUMN IF NOT EXISTS payment_amount_indicator TEXT DEFAULT 'not_paid';
 
 CREATE TABLE IF NOT EXISTS public.payment_plans (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     reservation_id UUID NOT NULL REFERENCES public.reservations(id) ON DELETE CASCADE,
     customer_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     village_id UUID NOT NULL REFERENCES public.villages(id) ON DELETE CASCADE,
@@ -52,7 +54,7 @@ CREATE TABLE IF NOT EXISTS public.payment_plans (
 );
 
 CREATE TABLE IF NOT EXISTS public.payment_schedule (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     payment_plan_id UUID NOT NULL REFERENCES public.payment_plans(id) ON DELETE CASCADE,
     reservation_id UUID NOT NULL REFERENCES public.reservations(id) ON DELETE CASCADE,
     due_number INT NOT NULL,
