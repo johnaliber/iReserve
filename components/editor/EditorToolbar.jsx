@@ -15,7 +15,9 @@ import {
   Upload,
   Play,
   Pencil,
-  Sparkles
+  Sparkles,
+  Copy,
+  ClipboardPaste
 } from 'lucide-react';
 
 export default function EditorToolbar({
@@ -23,6 +25,8 @@ export default function EditorToolbar({
   onPublish,
   onUndo,
   onRedo,
+  onCopy,
+  onPaste,
   zoom,
   setZoom,
   gridEnabled,
@@ -33,12 +37,14 @@ export default function EditorToolbar({
   setPreviewMode,
   undoEnabled,
   redoEnabled,
+  copyEnabled,
+  pasteEnabled,
   onExport,
   onImport,
   onLoadDemo
 }) {
   return (
-    <div className="h-14 bg-white border-b border-slate-200/80 px-4 flex items-center justify-between gap-4 select-none z-20 shadow-sm">
+    <div className="h-14 flex-shrink-0 bg-white border-b border-slate-200/80 px-4 flex items-center justify-between gap-4 select-none z-20 shadow-sm">
       
       {/* 1. Left Action: Undo, Redo, Zoom Controls */}
       <div className="flex items-center gap-1">
@@ -57,6 +63,25 @@ export default function EditorToolbar({
           className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed transition outline-none cursor-pointer"
         >
           <Redo2 className="w-4 h-4" />
+        </button>
+
+        <div className="h-4 w-[1px] bg-slate-200 mx-2" />
+
+        <button
+          onClick={onCopy}
+          disabled={!copyEnabled}
+          title="Copy"
+          className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed transition outline-none cursor-pointer"
+        >
+          <Copy className="w-4 h-4" />
+        </button>
+        <button
+          onClick={onPaste}
+          disabled={!pasteEnabled}
+          title="Paste"
+          className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed transition outline-none cursor-pointer"
+        >
+          <ClipboardPaste className="w-4 h-4" />
         </button>
 
         <div className="h-4 w-[1px] bg-slate-200 mx-2" />

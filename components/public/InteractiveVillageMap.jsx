@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { createClient } from '@/lib/supabase/client';
 import PropertyDetailModal from './PropertyDetailModal';
@@ -21,7 +21,137 @@ import {
 import Link from 'next/link';
 
 // Synchronous react-konva imports, component is loaded dynamically by parent pages to avoid SSR issues
-import { Stage, Layer, Line, Circle, Rect, Text, Group } from 'react-konva';
+import { Stage, Layer, Line, Circle, Rect, Text, Group, Shape, Image as KonvaImage } from 'react-konva';
+
+const DEFAULT_CANVAS = { width: 3000, height: 2200 };
+
+function getPointsBounds(points = []) {
+  if (!points.length) return null;
+  const xs = points.filter((_, idx) => idx % 2 === 0);
+  const ys = points.filter((_, idx) => idx % 2 === 1);
+  return {
+    minX: Math.min(...xs),
+    minY: Math.min(...ys),
+    maxX: Math.max(...xs),
+    maxY: Math.max(...ys)
+  };
+}
+
+function getObjectBounds(object) {
+  const data = object.object_data || {};
+
+  if (Array.isArray(data.points) && data.points.length >= 2) {
+    return getPointsBounds(data.points);
+  }
+
+  if (typeof data.x === 'number' || typeof data.y === 'number') {
+    const x = data.x || 0;
+    const y = data.y || 0;
+    const radius = data.radius || 0;
+    return {
+      minX: x - radius,
+      minY: y - radius,
+      maxX: x + (data.width || radius),
+      maxY: y + (data.height || radius)
+    };
+  }
+
+  return null;
+}
+
+function getObjectsBounds(objects = [], canvas = DEFAULT_CANVAS) {
+  const bounds = objects
+    .filter((object) => object.is_visible !== false)
+    .map(getObjectBounds)
+    .filter(Boolean);
+
+  if (bounds.length === 0) {
+    return { minX: 0, minY: 0, maxX: canvas.width, maxY: canvas.height };
+  }
+
+  return bounds.reduce((acc, bound) => ({
+    minX: Math.min(acc.minX, bound.minX),
+    minY: Math.min(acc.minY, bound.minY),
+    maxX: Math.max(acc.maxX, bound.maxX),
+    maxY: Math.max(acc.maxY, bound.maxY)
+  }));
+}
+
+function getFitTransform(bounds, viewport, padding = 24) {
+  const contentWidth = Math.max(1, bounds.maxX - bounds.minX);
+  const contentHeight = Math.max(1, bounds.maxY - bounds.minY);
+  const availableWidth = Math.max(1, viewport.width - padding * 2);
+  const availableHeight = Math.max(1, viewport.height - padding * 2);
+  const scale = Math.min(availableWidth / contentWidth, availableHeight / contentHeight);
+
+  return {
+    scale,
+    x: (viewport.width - contentWidth * scale) / 2 - bounds.minX * scale,
+    y: (viewport.height - contentHeight * scale) / 2 - bounds.minY * scale
+  };
+}
+
+function buildCurveControls(points = []) {
+  const controls = [];
+  for (let i = 0; i < points.length - 2; i += 2) {
+    const x1 = points[i];
+    const y1 = points[i + 1];
+    const x2 = points[i + 2];
+    const y2 = points[i + 3];
+    controls.push({
+      x: (x1 + x2) / 2,
+      y: (y1 + y2) / 2
+    });
+  }
+  return controls;
+}
+
+function drawCurvePath(context, points = [], controls = []) {
+  if (points.length < 4) return;
+
+  context.beginPath();
+  context.moveTo(points[0], points[1]);
+
+  for (let segment = 0; segment < (points.length / 2) - 1; segment += 1) {
+    const endX = points[(segment + 1) * 2];
+    const endY = points[(segment + 1) * 2 + 1];
+    const control = controls[segment] || {
+      x: (points[segment * 2] + endX) / 2,
+      y: (points[segment * 2 + 1] + endY) / 2
+    };
+
+    context.quadraticCurveTo(control.x, control.y, endX, endY);
+  }
+}
+
+function PublicImageLayer({ object }) {
+  const [image, setImage] = useState(null);
+  const data = object.object_data || {};
+  const imageUrl = data.image_url || data.imageUrl;
+
+  useEffect(() => {
+    if (!imageUrl) return undefined;
+    const img = new window.Image();
+    img.onload = () => setImage(img);
+    img.src = imageUrl;
+    return undefined;
+  }, [imageUrl]);
+
+  if (!image || object.is_visible === false || data.showInPublicMap === false) return null;
+
+  return (
+    <KonvaImage
+      image={image}
+      x={data.x || 0}
+      y={data.y || 0}
+      width={data.width || 600}
+      height={data.height || 400}
+      rotation={data.rotation || 0}
+      opacity={data.opacity ?? 0.6}
+      listening={false}
+    />
+  );
+}
 
 
 export default function InteractiveVillageMap({
@@ -37,17 +167,22 @@ export default function InteractiveVillageMap({
 }) {
   const supabase = createClient();
   const stageRef = useRef(null);
+  const viewportRef = useRef(null);
 
   // States
   const [loading, setLoading] = useState(true);
   const [village, setVillage] = useState(null);
   const [objects, setObjects] = useState([]);
+  const [blueprintCanvas, setBlueprintCanvas] = useState(DEFAULT_CANVAS);
   const [properties, setProperties] = useState([]);
-  const [zoom, setZoom] = useState(0.85);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [viewportSize, setViewportSize] = useState({ width: 900, height: 600 });
   const [tooltip, setTooltip] = useState(null);
 
   // Overlays
   const [layers, setLayers] = useState({
+    reference: true,
     roads: true,
     lots: true,
     amenities: true,
@@ -124,7 +259,7 @@ export default function InteractiveVillageMap({
       // 2. Fetch blueprint
       let blueprintQuery = supabase
         .from('blueprints')
-        .select('id')
+        .select('id, canvas_width, canvas_height')
         .eq('village_id', v.id)
         .order('updated_at', { ascending: false })
         .limit(1);
@@ -134,6 +269,12 @@ export default function InteractiveVillageMap({
         : blueprintQuery.eq('status', 'published');
 
       const { data: bp } = await blueprintQuery.maybeSingle();
+      if (bp) {
+        setBlueprintCanvas({
+          width: bp.canvas_width || DEFAULT_CANVAS.width,
+          height: bp.canvas_height || DEFAULT_CANVAS.height
+        });
+      }
 
       // 3. Fetch properties
       const { data: props } = await supabase
@@ -180,6 +321,24 @@ export default function InteractiveVillageMap({
   }, [villageSlug, supabase, allowDemoFallback, adminShowHidden, preferDraftBlueprint]);
 
   useEffect(() => {
+    const node = viewportRef.current;
+    if (!node) return undefined;
+
+    const updateSize = () => {
+      const rect = node.getBoundingClientRect();
+      setViewportSize({
+        width: Math.max(320, Math.round(rect.width)),
+        height: Math.max(500, Math.round(rect.height))
+      });
+    };
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
     if (villageSlug) {
       const timer = setTimeout(() => {
         fetchMapData();
@@ -190,8 +349,14 @@ export default function InteractiveVillageMap({
     return undefined;
   }, [villageSlug, fetchMapData]);
 
-
-
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      setTooltip(null);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [villageSlug, preferDraftBlueprint, adminPropertyMode]);
 
   // Helper properties list if none are configured in database
   const getDisplayedProperties = () => {
@@ -349,13 +514,21 @@ export default function InteractiveVillageMap({
     if (!stage) return;
 
     const scaleBy = 1.05;
-    const oldScale = stage.scaleX();
-    const newScale = e.evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy;
-    const clampedScale = Math.max(0.3, Math.min(3, newScale));
+    setZoom((current) => Math.max(0.35, Math.min(3, e.evt.deltaY < 0 ? current * scaleBy : current / scaleBy)));
+  };
 
-    setZoom(clampedScale);
-    stage.scale({ x: clampedScale, y: clampedScale });
-    stage.batchDraw();
+  const contentBounds = useMemo(
+    () => getObjectsBounds(objects, blueprintCanvas),
+    [objects, blueprintCanvas]
+  );
+  const fitTransform = useMemo(
+    () => getFitTransform(contentBounds, viewportSize, adminPropertyMode ? 18 : 24),
+    [contentBounds, viewportSize, adminPropertyMode]
+  );
+  const stageTransform = {
+    x: fitTransform.x + pan.x,
+    y: fitTransform.y + pan.y,
+    scale: fitTransform.scale * zoom
   };
 
   if (loading) {
@@ -363,6 +536,28 @@ export default function InteractiveVillageMap({
       <div className="flex items-center justify-center min-h-[500px] text-slate-400">
         <Loader2 className="w-10 h-10 text-emerald-400 animate-spin mb-4" />
         <span className="text-sm font-semibold uppercase tracking-wider">Loading subdivision map...</span>
+      </div>
+    );
+  }
+
+  if (!allowDemoFallback && !adminPropertyMode && objects.length === 0) {
+    return (
+      <div className="flex min-h-[500px] w-full items-center justify-center rounded-2xl border border-[#e2e8f0] bg-white p-8 text-center shadow-sm">
+        <div className="max-w-md">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-100 bg-emerald-50 text-emerald-600">
+            <Layers className="h-6 w-6" />
+          </div>
+          <h2 className="text-xl font-extrabold text-[#272727]">No blueprint available</h2>
+          <p className="mt-2 text-sm leading-relaxed text-[#64748b]">
+            There is no published blueprint for {village?.name || 'this village'} yet. Please check back once the village admin has uploaded and published the subdivision map.
+          </p>
+          <Link
+            href="/customer/dashboard"
+            className="mt-6 inline-flex items-center justify-center rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-extrabold text-white shadow-sm transition hover:bg-emerald-500"
+          >
+            Back to Account
+          </Link>
+        </div>
       </div>
     );
   }
@@ -557,7 +752,7 @@ export default function InteractiveVillageMap({
       )}
 
       {/* 2. Right Column: Konva stage viewport */}
-      <div className="flex-1 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden relative shadow-inner min-h-[500px]">
+      <div ref={viewportRef} className="flex-1 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden relative shadow-inner min-h-[500px]">
         {/* Layer Visibility Overrides Controls inside the Stage */}
         <div className="absolute top-4 left-4 z-10 bg-slate-950/80 border border-slate-850 p-2 rounded-xl flex items-center gap-2 text-xs select-none glass-card font-medium">
           <Layers className="w-3.5 h-3.5 text-emerald-400" />
@@ -584,42 +779,110 @@ export default function InteractiveVillageMap({
         </div>
 
         <Stage
-          width={900}
-          height={600}
+          width={viewportSize.width}
+          height={viewportSize.height}
+          x={stageTransform.x}
+          y={stageTransform.y}
+          scaleX={stageTransform.scale}
+          scaleY={stageTransform.scale}
           ref={stageRef}
           onWheel={handleStageWheel}
+          onDragEnd={(e) => {
+            if (e.target !== stageRef.current) return;
+            setPan({
+              x: e.target.x() - fitTransform.x,
+              y: e.target.y() - fitTransform.y
+            });
+          }}
           draggable={true}
           className="cursor-grab active:cursor-grabbing"
         >
+          {/* Layer 0: Published image layers */}
+          <Layer>
+            {layers.reference && objects
+              .filter(o => o.object_type === 'image_layer' || (o.object_type === 'landmark' && o.object_data?.kind === 'reference_image'))
+              .map((object) => (
+                <PublicImageLayer key={object.id} object={object} />
+              ))}
+          </Layer>
+
           {/* Layer 1: Roads border and asphalt */}
           <Layer>
+            {/* Draw every road border first so intersections visually merge. */}
             {objects
-              .filter(o => o.object_type === 'road')
+              .filter(o => o.object_type === 'road' && o.is_visible !== false)
               .map((road) => {
                 const data = road.object_data || {};
                 const width = data.width || 30;
                 const border = data.borderThickness || 5;
-                return (
-                  <React.Fragment key={road.id}>
-                    {/* Road Borders */}
-                    <Line
-                      points={data.points || []}
+                const isPenCurve = data.curveMode === 'pen' || (data.curveControls || []).length > 0;
+
+                if (isPenCurve) {
+                  return (
+                    <Shape
+                      key={`road-border-${road.id}`}
+                      sceneFunc={(context, shape) => {
+                        drawCurvePath(context, data.points || [], data.curveControls || buildCurveControls(data.points || []));
+                        context.strokeShape(shape);
+                      }}
                       stroke={data.borderColor || '#334155'}
                       strokeWidth={width + border * 2}
                       lineCap="round"
                       lineJoin="round"
-                      tension={data.tension || 0}
+                      listening={false}
                     />
-                    {/* Road Fills */}
-                    <Line
-                      points={data.points || []}
+                  );
+                }
+
+                return (
+                  <Line
+                    key={`road-border-${road.id}`}
+                    points={data.points || []}
+                    stroke={data.borderColor || '#334155'}
+                    strokeWidth={width + border * 2}
+                    lineCap="round"
+                    lineJoin="round"
+                    tension={data.tension || 0}
+                    listening={false}
+                  />
+                );
+              })}
+
+            {/* Then draw every road fill on top, removing border seams at crossings. */}
+            {objects
+              .filter(o => o.object_type === 'road' && o.is_visible !== false)
+              .map((road) => {
+                const data = road.object_data || {};
+                const isPenCurve = data.curveMode === 'pen' || (data.curveControls || []).length > 0;
+
+                if (isPenCurve) {
+                  return (
+                    <Shape
+                      key={`road-fill-${road.id}`}
+                      sceneFunc={(context, shape) => {
+                        drawCurvePath(context, data.points || [], data.curveControls || buildCurveControls(data.points || []));
+                        context.strokeShape(shape);
+                      }}
                       stroke={data.asphaltColor || '#cbd5e1'}
-                      strokeWidth={width}
+                      strokeWidth={data.width || 30}
                       lineCap="round"
                       lineJoin="round"
-                      tension={data.tension || 0}
+                      listening={false}
                     />
-                  </React.Fragment>
+                  );
+                }
+
+                return (
+                  <Line
+                    key={`road-fill-${road.id}`}
+                    points={data.points || []}
+                    stroke={data.asphaltColor || '#cbd5e1'}
+                    strokeWidth={data.width || 30}
+                    lineCap="round"
+                    lineJoin="round"
+                    tension={data.tension || 0}
+                    listening={false}
+                  />
                 );
               })}
           </Layer>

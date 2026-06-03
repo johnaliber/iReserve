@@ -1,8 +1,9 @@
 import React from 'react';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import VillageCard from '@/components/public/VillageCard';
 import Navbar from '@/components/layout/Navbar';
-import { Search, Building } from 'lucide-react';
+import { ArrowLeft, Building } from 'lucide-react';
 
 export const revalidate = 0;
 
@@ -61,6 +62,14 @@ export default async function VillagesPage() {
       <Navbar />
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-12 relative z-10">
+        <Link
+          href="/customer/dashboard"
+          className="mb-8 inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-2 text-xs font-bold text-slate-200 shadow transition hover:border-emerald-500/40 hover:bg-emerald-500/10 hover:text-emerald-300"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Account
+        </Link>
+
         <div className="text-center mb-12">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mb-4 shadow">
             <Building className="w-6 h-6" />

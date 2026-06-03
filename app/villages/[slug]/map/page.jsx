@@ -84,7 +84,7 @@ export default function VillageMapPage({ params }) {
             <Loader2 className="w-10 h-10 text-emerald-400 animate-spin" />
           </div>
         ) : (
-          <InteractiveVillageMap villageSlug={slug} />
+          <InteractiveVillageMap villageSlug={slug} allowDemoFallback={false} />
         )}
       </main>
 

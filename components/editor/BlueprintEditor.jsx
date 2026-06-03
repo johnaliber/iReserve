@@ -7,7 +7,7 @@ import EditorToolbar from './EditorToolbar';
 import ObjectToolbox from './ObjectToolbox';
 import PropertiesPanel from './PropertiesPanel';
 import LayersPanel from './LayersPanel';
-import { Loader2, ArrowLeft, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Loader2, ArrowLeft, CheckCircle, AlertTriangle, Circle, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import Link from 'next/link';
 
 // Dynamically import CanvasStage with SSR disabled as Konva requires window context
@@ -27,6 +27,113 @@ function formatSupabaseError(err) {
   ].filter(Boolean);
 
   return parts.length > 0 ? parts.join(' ') : JSON.stringify(err);
+}
+
+function createObjectId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random()}`.replace('.', '-');
+}
+
+function normalizeMatchValue(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function parseBlockLotFromObject(obj) {
+  const data = obj?.object_data || {};
+  const directBlock = normalizeMatchValue(data.block_number || data.blockNumber);
+  const directLot = normalizeMatchValue(data.lot_number || data.lotNumber);
+
+  if (directBlock && directLot) {
+    return { block: directBlock, lot: directLot };
+  }
+
+  const text = String(data.name || data.label || '').toLowerCase();
+  const verboseMatch = text.match(/block\s*([a-z0-9-]+).*lot\s*([a-z0-9-]+)/i);
+  if (verboseMatch) {
+    return {
+      block: normalizeMatchValue(verboseMatch[1]),
+      lot: normalizeMatchValue(verboseMatch[2])
+    };
+  }
+
+  const shortMatch = text.match(/\bb\s*([a-z0-9-]+)\s*l\s*([a-z0-9-]+)/i);
+  if (shortMatch) {
+    return {
+      block: normalizeMatchValue(shortMatch[1]),
+      lot: normalizeMatchValue(shortMatch[2])
+    };
+  }
+
+  return null;
+}
+
+function withPersistableIds(items) {
+  return items.map((obj) => ({
+    ...obj,
+    id: UUID_RE.test(obj.id || '') ? obj.id : createObjectId()
+  }));
+}
+
+function cloneObject(object) {
+  return JSON.parse(JSON.stringify(object));
+}
+
+function offsetObjectData(data = {}, offset = 32) {
+  const nextData = cloneObject(data);
+
+  if (Array.isArray(nextData.points)) {
+    nextData.points = nextData.points.map((value, idx) => (
+      idx % 2 === 0 ? value + offset : value + offset
+    ));
+  } else {
+    nextData.x = (nextData.x || 0) + offset;
+    nextData.y = (nextData.y || 0) + offset;
+  }
+
+  if (Array.isArray(nextData.curveControls)) {
+    nextData.curveControls = nextData.curveControls.map((control) => ({
+      ...control,
+      x: (control.x || 0) + offset,
+      y: (control.y || 0) + offset
+    }));
+  }
+
+  return nextData;
+}
+
+function preparePastedObject(object, index) {
+  const pastedObject = {
+    ...cloneObject(object),
+    id: createObjectId(),
+    object_data: offsetObjectData(object.object_data, 32),
+    layer_order: (object.layer_order || 0) + index + 1
+  };
+
+  if (pastedObject.object_type === 'lot' || pastedObject.object_type === 'house') {
+    pastedObject.linked_property_id = null;
+    delete pastedObject.object_data.property_code;
+    delete pastedObject.object_data.block_number;
+    delete pastedObject.object_data.lot_number;
+    delete pastedObject.object_data.blockNumber;
+    delete pastedObject.object_data.lotNumber;
+  }
+
+  return pastedObject;
+}
+
+function isImageFile(file) {
+  return ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(file?.type);
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (evt) => resolve(evt.target.result);
+    reader.onerror = () => reject(new Error('Image could not be read.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 export default function BlueprintEditor({ blueprintId, villageId }) {
@@ -50,6 +157,11 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
   const [selectedObjectIds, setSelectedObjectIds] = useState([]);
   const [saveStatus, setSaveStatus] = useState(''); // 'saving', 'saved', 'error'
   const [saveError, setSaveError] = useState('');
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState(null);
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
+  const [clipboardObjects, setClipboardObjects] = useState([]);
 
   useEffect(() => {
     Promise.resolve().then(() => {
@@ -62,6 +174,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
   }, [selectedObjectIds]);
   
   const [layersVisible, setLayersVisible] = useState({
+    reference: true,
     roads: true,
     lots: true,
     amenities: true,
@@ -92,6 +205,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
       
       let loadedObjects = objs || [];
       setObjects(loadedObjects);
+      setHasUnsavedChanges(false);
       
       // Initialize history stack
       setHistory([JSON.stringify(loadedObjects)]);
@@ -112,9 +226,21 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
     }
   }, [blueprintId, fetchBlueprintData]);
 
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (!hasUnsavedChanges) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
   // Push new state onto history stack
   const updateObjectsWithHistory = useCallback((newObjects) => {
     setObjects(newObjects);
+    setHasUnsavedChanges(true);
     const jsonStr = JSON.stringify(newObjects);
     
     // Clear out forward history if we were in the middle of undoing
@@ -123,12 +249,40 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
     setHistoryIndex(newHistory.length);
   }, [history, historyIndex]);
 
+  const updateObjectsLive = useCallback((newObjects) => {
+    setObjects(newObjects);
+    setHasUnsavedChanges(true);
+  }, []);
+
   const handleDeleteObjects = useCallback((objIds) => {
     if (!objIds || objIds.length === 0) return;
     const filtered = objects.filter(o => !objIds.includes(o.id));
     updateObjectsWithHistory(filtered);
     setSelectedObjectIds([]);
   }, [objects, updateObjectsWithHistory]);
+
+  const handleCopyObjects = useCallback(() => {
+    if (!selectedObjectIds.length) return;
+
+    const selectedSet = new Set(selectedObjectIds);
+    const copiedObjects = objects
+      .filter((object) => selectedSet.has(object.id))
+      .map((object) => cloneObject(object));
+
+    setClipboardObjects(copiedObjects);
+  }, [objects, selectedObjectIds]);
+
+  const handlePasteObjects = useCallback(() => {
+    if (!clipboardObjects.length) return;
+
+    const pastedObjects = clipboardObjects.map((object, index) => preparePastedObject(object, index));
+    const pastedIds = pastedObjects.map((object) => object.id);
+
+    updateObjectsWithHistory([...objects, ...pastedObjects]);
+    setSelectedObjectIds(pastedIds);
+    setSelectedObjectId(pastedIds[pastedIds.length - 1] || null);
+    setClipboardObjects(pastedObjects);
+  }, [clipboardObjects, objects, updateObjectsWithHistory]);
 
   // Global Keyboard Shortcuts for Drawing Tools
   useEffect(() => {
@@ -139,6 +293,10 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
         document.activeElement.tagName === 'TEXTAREA' || 
         document.activeElement.isContentEditable
       ) {
+        return;
+      }
+
+      if (e.ctrlKey || e.metaKey) {
         return;
       }
 
@@ -216,23 +374,58 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
   }, [selectedObjectIds, objects, handleDeleteObjects]);
 
 
-  const handleUndo = () => {
+  const handleUndo = useCallback(() => {
     if (historyIndex > 0) {
       const prevIdx = historyIndex - 1;
       setHistoryIndex(prevIdx);
       setObjects(JSON.parse(history[prevIdx]));
       setSelectedObjectId(null);
+      setSelectedObjectIds([]);
     }
-  };
+  }, [history, historyIndex]);
 
-  const handleRedo = () => {
+  const handleRedo = useCallback(() => {
     if (historyIndex < history.length - 1) {
       const nextIdx = historyIndex + 1;
       setHistoryIndex(nextIdx);
       setObjects(JSON.parse(history[nextIdx]));
       setSelectedObjectId(null);
+      setSelectedObjectIds([]);
     }
-  };
+  }, [history, historyIndex]);
+
+  useEffect(() => {
+    const handleHistoryShortcut = (e) => {
+      const target = e.target;
+      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable) {
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (key === 'y' || (key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && key === 'c') {
+        e.preventDefault();
+        handleCopyObjects();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && key === 'v') {
+        e.preventDefault();
+        handlePasteObjects();
+      }
+    };
+
+    window.addEventListener('keydown', handleHistoryShortcut);
+    return () => window.removeEventListener('keydown', handleHistoryShortcut);
+  }, [handleUndo, handleRedo, handleCopyObjects, handlePasteObjects]);
 
   const handleUpdateObject = (updatedObj) => {
     const updated = objects.map(o => o.id === updatedObj.id ? updatedObj : o);
@@ -266,13 +459,40 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
 
       if (deleteError) throw deleteError;
 
-      const linkedPropertyIds = objects
+      const { data: villageProperties, error: propertiesError } = await supabase
+        .from('properties')
+        .select('id, block_number, lot_number')
+        .eq('village_id', resolvedVillageId);
+
+      if (propertiesError) throw propertiesError;
+
+      const propertyByBlockLot = new Map(
+        (villageProperties || []).map((prop) => [
+          `${normalizeMatchValue(prop.block_number)}::${normalizeMatchValue(prop.lot_number)}`,
+          prop.id
+        ])
+      );
+
+      const objectsForSave = withPersistableIds(objects).map((obj) => {
+        if (obj.linked_property_id || (obj.object_type !== 'lot' && obj.object_type !== 'house')) {
+          return obj;
+        }
+
+        const blockLot = parseBlockLotFromObject(obj);
+        if (!blockLot) return obj;
+
+        const matchedPropertyId = propertyByBlockLot.get(`${blockLot.block}::${blockLot.lot}`);
+        return matchedPropertyId ? { ...obj, linked_property_id: matchedPropertyId } : obj;
+      });
+
+      const linkedPropertyIds = objectsForSave
         .map((obj) => obj.linked_property_id)
         .filter(Boolean);
 
-      if (objects.length > 0) {
-        const insertPayload = objects.map(obj => {
+      if (objectsForSave.length > 0) {
+        const insertPayload = objectsForSave.map(obj => {
           const payloadObj = {
+            id: obj.id,
             village_id: resolvedVillageId,
             blueprint_id: blueprintId,
             object_type: obj.object_type,
@@ -282,23 +502,6 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
             is_visible: obj.is_visible !== false,
             is_locked: obj.is_locked === true
           };
-
-          const isNew = typeof obj.id === 'string' && (
-            obj.id.startsWith('mock-') || 
-            obj.id.startsWith('road-') || 
-            obj.id.startsWith('lot-') || 
-            obj.id.startsWith('tree-') || 
-            obj.id.startsWith('clubhouse-') || 
-            obj.id.startsWith('pool-') || 
-            obj.id.startsWith('guard-') || 
-            obj.id.startsWith('light-') || 
-            obj.id.startsWith('label-') || 
-            obj.id.startsWith('zone-')
-          );
-
-          if (!isNew && UUID_RE.test(obj.id)) {
-            payloadObj.id = obj.id;
-          }
 
           return payloadObj;
         });
@@ -321,8 +524,8 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
       }
 
       for (const propertyId of linkedPropertyIds) {
-        const linkedObject = objects.find((obj) => obj.linked_property_id === propertyId);
-        const persistedObjectId = UUID_RE.test(linkedObject?.id || '') ? linkedObject.id : null;
+        const linkedObject = objectsForSave.find((obj) => obj.linked_property_id === propertyId);
+        const persistedObjectId = linkedObject?.id;
 
         if (persistedObjectId) {
           const { error: linkError } = await supabase
@@ -336,6 +539,9 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
         }
       }
 
+      setObjects(objectsForSave);
+      setHasUnsavedChanges(false);
+      setLastSavedAt(new Date());
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus(''), 2500);
     } catch (err) {
@@ -414,6 +620,73 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
     reader.readAsText(file);
   };
 
+  const handleAddImageLayerFile = useCallback(async (file, position = { x: 80, y: 80 }) => {
+    if (!file) return;
+    if (!isImageFile(file)) {
+      alert('Please upload a PNG, JPG, JPEG, or WEBP image.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Please upload an image smaller than 10MB.');
+      return;
+    }
+
+    const objectId = createObjectId();
+    let imageUrl = '';
+
+    try {
+      const safeName = file.name.replace(/[^a-z0-9._-]/gi, '-').toLowerCase();
+      const storagePath = `blueprints/${blueprintId}/${objectId}-${safeName}`;
+      const { error: uploadError } = await supabase.storage
+        .from('blueprint-assets')
+        .upload(storagePath, file, { cacheControl: '3600', upsert: false });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from('blueprint-assets').getPublicUrl(storagePath);
+      imageUrl = data.publicUrl;
+    } catch (error) {
+      console.warn('Image layer storage upload failed; using local data URL fallback.', error);
+      imageUrl = await readFileAsDataUrl(file);
+    }
+
+      const imageObject = {
+        id: objectId,
+        village_id: villageId,
+        blueprint_id: blueprintId,
+        object_type: 'image_layer',
+        layer_order: 0,
+        is_visible: true,
+        is_locked: false,
+        object_data: {
+          kind: 'image_layer',
+          name: file.name,
+          image_url: imageUrl,
+          imageUrl,
+          x: Math.round(position.x || 80),
+          y: Math.round(position.y || 80),
+          width: 760,
+          height: 520,
+          rotation: 0,
+          opacity: 0.6,
+          showInEditor: true,
+          showInAdminPreview: true,
+          showInPublicMap: true,
+          preserveOnPublish: true
+        }
+      };
+
+      updateObjectsWithHistory([imageObject, ...objects]);
+      setSelectedObjectIds([imageObject.id]);
+      setSelectedObjectId(imageObject.id);
+  }, [blueprintId, objects, supabase, updateObjectsWithHistory, villageId]);
+
+  const handleAddImageLayer = (e) => {
+    const file = e.target.files?.[0];
+    handleAddImageLayerFile(file);
+    e.target.value = '';
+  };
+
   const handleLoadDemo = () => {
     if (confirm('Are you sure you want to load the starter layout template? This will replace your current workspace drawing.')) {
       const demoObjs = getMockObjects(blueprint?.village_id || villageId, blueprintId);
@@ -441,6 +714,8 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
         onPublish={handlePublish}
         onUndo={handleUndo}
         onRedo={handleRedo}
+        onCopy={handleCopyObjects}
+        onPaste={handlePasteObjects}
         zoom={zoom}
         setZoom={setZoom}
         gridEnabled={gridEnabled}
@@ -451,6 +726,8 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
         setPreviewMode={setPreviewMode}
         undoEnabled={historyIndex > 0}
         redoEnabled={historyIndex < history.length - 1}
+        copyEnabled={selectedObjectIds.length > 0}
+        pasteEnabled={clipboardObjects.length > 0}
         onExport={handleExport}
         onImport={handleImport}
         onLoadDemo={handleLoadDemo}
@@ -486,16 +763,35 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
         </div>
       )}
 
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 min-h-0 min-w-0 flex overflow-hidden relative">
         {/* 2. Left side Toolbox */}
         {!previewMode && (
-          <ObjectToolbox activeTool={activeTool} setActiveTool={setActiveTool} />
+          leftPanelCollapsed ? (
+            <button
+              onClick={() => setLeftPanelCollapsed(false)}
+              title="Show tools panel"
+              className="w-10 flex-shrink-0 border-r border-slate-800/80 bg-white text-slate-500 transition hover:text-emerald-600"
+            >
+              <PanelLeftOpen className="mx-auto h-5 w-5" />
+            </button>
+          ) : (
+            <div className="relative flex-shrink-0">
+              <button
+                onClick={() => setLeftPanelCollapsed(true)}
+                title="Collapse tools panel"
+                className="absolute right-2 top-2 z-10 rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm transition hover:text-emerald-600"
+              >
+                <PanelLeftClose className="h-4 w-4" />
+              </button>
+              <ObjectToolbox activeTool={activeTool} setActiveTool={setActiveTool} />
+            </div>
+          )
         )}
 
         {/* 3. Center Canvas Stage wrapper */}
-        <div className="flex-1 h-full flex flex-col relative">
+        <div className="min-w-0 flex-1 h-full flex flex-col relative overflow-hidden">
           {/* Blueprint Name Title Header bar */}
-          <div className="h-10 bg-slate-950 border-b border-slate-900 px-4 flex items-center justify-between text-xs text-slate-500 font-semibold select-none">
+          <div className="h-10 flex-shrink-0 bg-slate-950 border-b border-slate-900 px-4 flex items-center justify-between gap-3 text-xs text-slate-500 font-semibold select-none">
             <span className="text-slate-400 flex items-center gap-1.5">
               {previewMode ? (
                 <button
@@ -513,14 +809,25 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
               )}
               / {blueprint?.name}
             </span>
-            <span className="text-[10px] bg-slate-900 border border-slate-800 px-2 py-0.5 rounded uppercase tracking-wider">
-              Status: {blueprint?.status}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] bg-slate-900 border border-slate-800 px-2 py-0.5 rounded uppercase tracking-wider">
+                Status: {blueprint?.status}
+              </span>
+              <span className={`text-[10px] px-2 py-0.5 rounded uppercase tracking-wider flex items-center gap-1 ${
+                hasUnsavedChanges
+                  ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
+                  : 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
+              }`}>
+                <Circle className="w-2 h-2 fill-current" />
+                {hasUnsavedChanges ? 'Unsaved changes' : lastSavedAt ? `Saved ${lastSavedAt.toLocaleTimeString()}` : 'No changes'}
+              </span>
+            </div>
           </div>
 
           <CanvasStage
             objects={objects}
-            setObjects={updateObjectsWithHistory}
+            setObjects={updateObjectsLive}
+            commitObjects={updateObjectsWithHistory}
             activeTool={previewMode ? 'select' : activeTool}
             setActiveTool={setActiveTool}
             zoom={zoom}
@@ -535,22 +842,47 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
             multiSelectEnabled={activeTool === 'multi_select'}
             layersVisible={layersVisible}
             onSaveDraft={handleSaveDraft}
+            onAddImageLayerFile={handleAddImageLayerFile}
           />
         </div>
 
         {/* 4. Right side Panels */}
         {!previewMode && (
-          <div className="flex flex-col border-l border-slate-800/80 divide-y divide-slate-800/80">
-            <PropertiesPanel
-              selectedObject={selectedObject}
-              onUpdateObject={handleUpdateObject}
-              onDeleteObject={handleDeleteObject}
-              villageId={villageId}
-            />
-            <div className="p-4 bg-slate-900">
-              <LayersPanel layers={layersVisible} setLayers={setLayersVisible} />
+          rightPanelCollapsed ? (
+            <button
+              onClick={() => setRightPanelCollapsed(false)}
+              title="Show details panel"
+              className="w-10 flex-shrink-0 border-l border-slate-800/80 bg-white text-slate-500 transition hover:text-emerald-600"
+            >
+              <PanelRightOpen className="mx-auto h-5 w-5" />
+            </button>
+          ) : (
+            <div className="w-[352px] flex-shrink-0 flex flex-col border-l border-slate-800/80 overflow-y-auto relative bg-slate-900">
+              <button
+                onClick={() => setRightPanelCollapsed(true)}
+                title="Collapse details panel"
+                className="absolute right-3 top-3 z-20 rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm transition hover:text-emerald-600"
+              >
+                <PanelRightClose className="h-4 w-4" />
+              </button>
+              <PropertiesPanel
+                selectedObject={selectedObject}
+                onUpdateObject={handleUpdateObject}
+                onDeleteObject={handleDeleteObject}
+                villageId={villageId}
+              />
+              <div className="border-t border-slate-800/80 bg-slate-900 p-4">
+                <LayersPanel
+                  objects={objects}
+                  setObjects={updateObjectsWithHistory}
+                  selectedObjectId={selectedObjectId}
+                  setSelectedObjectId={setSelectedObjectId}
+                  setSelectedObjectIds={setSelectedObjectIds}
+                  onAddImageLayer={handleAddImageLayer}
+                />
+              </div>
             </div>
-          </div>
+          )
         )}
       </div>
       

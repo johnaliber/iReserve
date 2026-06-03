@@ -23,6 +23,7 @@ CREATE TABLE public.profiles (
 CREATE TABLE public.villages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
+    village_code TEXT UNIQUE NOT NULL,
     slug TEXT UNIQUE NOT NULL,
     description TEXT,
     address TEXT NOT NULL,
@@ -74,7 +75,7 @@ CREATE TABLE public.blueprint_objects (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     village_id UUID NOT NULL REFERENCES public.villages(id) ON DELETE CASCADE,
     blueprint_id UUID NOT NULL REFERENCES public.blueprints(id) ON DELETE CASCADE,
-    object_type TEXT NOT NULL CHECK (object_type IN ('road', 'lot', 'house', 'tree', 'amenity', 'label', 'zone', 'gate', 'guard_house', 'clubhouse', 'pool', 'park', 'street_light', 'landmark', 'sidewalk')),
+    object_type TEXT NOT NULL CHECK (object_type IN ('road', 'lot', 'house', 'tree', 'amenity', 'label', 'zone', 'gate', 'guard_house', 'clubhouse', 'pool', 'park', 'street_light', 'landmark', 'sidewalk', 'image_layer')),
     object_data JSONB NOT NULL DEFAULT '{}'::jsonb,
     linked_property_id UUID, -- Will link to property after creation
     layer_order INT NOT NULL DEFAULT 0,
@@ -91,6 +92,8 @@ CREATE TABLE public.properties (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     village_id UUID NOT NULL REFERENCES public.villages(id) ON DELETE CASCADE,
     blueprint_object_id UUID REFERENCES public.blueprint_objects(id) ON DELETE SET NULL,
+    village_code TEXT,
+    phase_number TEXT NOT NULL DEFAULT '1',
     property_code TEXT NOT NULL,
     block_number TEXT NOT NULL,
     lot_number TEXT NOT NULL,
@@ -115,7 +118,8 @@ CREATE TABLE public.properties (
     maintenance_reason TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-    UNIQUE(village_id, block_number, lot_number)
+    UNIQUE(property_code),
+    UNIQUE(village_id, phase_number, block_number, lot_number)
 );
 
 -- Add foreign key constraint to blueprint_objects for linked_property_id

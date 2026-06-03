@@ -1,13 +1,165 @@
 'use client';
 
-import React, { useRef, useState, useEffect } from 'react';
-import { Stage, Layer, Line, Circle, Rect, Text, Group, Transformer } from 'react-konva';
-import { getDistance } from '@/lib/editor/geometry';
+import React, { memo, useRef, useState, useEffect } from 'react';
+import { Stage, Layer, Line, Circle, Rect, Text, Group, Transformer, Shape, Image as KonvaImage } from 'react-konva';
 import { findNearestSnapPoint, snapToGrid } from '@/lib/editor/snapUtils';
+
+const STAGE_WIDTH = 3000;
+const STAGE_HEIGHT = 2200;
+
+function getPointsBox(points = []) {
+  const xs = points.filter((_, idx) => idx % 2 === 0);
+  const ys = points.filter((_, idx) => idx % 2 === 1);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  const maxX = Math.max(...xs);
+  const maxY = Math.max(...ys);
+
+  return {
+    x: minX,
+    y: minY,
+    width: Math.max(1, maxX - minX),
+    height: Math.max(1, maxY - minY)
+  };
+}
+
+function getLocalPointShape(points = []) {
+  const box = getPointsBox(points);
+  return {
+    ...box,
+    points: points.map((value, idx) => (
+      idx % 2 === 0 ? value - box.x : value - box.y
+    ))
+  };
+}
+
+function getLocalCurveControls(points = [], controls = []) {
+  const box = getPointsBox(points);
+  return (controls || []).map((control) => ({
+    x: control.x - box.x,
+    y: control.y - box.y
+  }));
+}
+
+function applyNodeTransformToPoint(x, y, sourceBox, node) {
+  const radians = (node.rotation() * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const localX = (x - sourceBox.x) * node.scaleX();
+  const localY = (y - sourceBox.y) * node.scaleY();
+
+  return {
+    x: node.x() + localX * cos - localY * sin,
+    y: node.y() + localX * sin + localY * cos
+  };
+}
+
+function objectClientBox(object) {
+  const data = object.object_data || {};
+  if (data.points?.length >= 2) return getPointsBox(data.points);
+  if (data.radius) {
+    return {
+      x: (data.x || 0) - data.radius,
+      y: (data.y || 0) - data.radius,
+      width: data.radius * 2,
+      height: data.radius * 2
+    };
+  }
+  return {
+    x: data.x || 0,
+    y: data.y || 0,
+    width: data.width || Math.max(20, String(data.text || '').length * (data.fontSize || 12)),
+    height: data.height || data.fontSize || 20
+  };
+}
+
+function boxesIntersect(a, b) {
+  return (
+    a.x <= b.x + b.width &&
+    a.x + a.width >= b.x &&
+    a.y <= b.y + b.height &&
+    a.y + a.height >= b.y
+  );
+}
+
+function buildCurveControls(points = []) {
+  const controls = [];
+  for (let i = 0; i < points.length - 2; i += 2) {
+    const x1 = points[i];
+    const y1 = points[i + 1];
+    const x2 = points[i + 2];
+    const y2 = points[i + 3];
+    controls.push({
+      x: (x1 + x2) / 2,
+      y: (y1 + y2) / 2
+    });
+  }
+  return controls;
+}
+
+function drawCurvePath(context, points = [], controls = []) {
+  if (points.length < 4) return;
+
+  context.beginPath();
+  context.moveTo(points[0], points[1]);
+
+  for (let segment = 0; segment < (points.length / 2) - 1; segment += 1) {
+    const endX = points[(segment + 1) * 2];
+    const endY = points[(segment + 1) * 2 + 1];
+    const control = controls[segment] || {
+      x: (points[segment * 2] + endX) / 2,
+      y: (points[segment * 2 + 1] + endY) / 2
+    };
+
+    context.quadraticCurveTo(control.x, control.y, endX, endY);
+  }
+}
+
+const ImageLayerObject = memo(function ImageLayerObject({ object, isSelected, canDrag, onSelect, onDragStart, onDragMove, onDragEnd }) {
+  const [image, setImage] = useState(null);
+  const data = object.object_data || {};
+  const imageUrl = data.image_url || data.imageUrl;
+
+  useEffect(() => {
+    if (!imageUrl) {
+      return undefined;
+    }
+
+    const img = new window.Image();
+    img.onload = () => setImage(img);
+    img.src = imageUrl;
+    return undefined;
+  }, [imageUrl]);
+
+  if (!image || object.is_visible === false || data.showInEditor === false) return null;
+
+  return (
+    <KonvaImage
+      id={object.id}
+      image={image}
+      x={data.x || 0}
+      y={data.y || 0}
+      width={data.width || 600}
+      height={data.height || 400}
+      rotation={data.rotation || 0}
+      opacity={data.opacity ?? 0.6}
+      stroke={isSelected ? '#fbbf24' : 'transparent'}
+      strokeWidth={isSelected ? 2 : 0}
+      draggable={canDrag}
+      onClick={onSelect}
+      onTap={onSelect}
+      onDragStart={onDragStart}
+      onDragMove={onDragMove}
+      onDragEnd={onDragEnd}
+      listening={true}
+    />
+  );
+});
 
 export default function CanvasStage({
   objects,
   setObjects,
+  commitObjects,
   activeTool,
   setActiveTool,
   zoom,
@@ -21,24 +173,27 @@ export default function CanvasStage({
   setSelectedObjectIds,
   multiSelectEnabled = false,
   layersVisible,
-  onSaveDraft
+  onSaveDraft,
+  onAddImageLayerFile
 }) {
   const stageRef = useRef(null);
   const transformerRef = useRef(null);
+  const dragSessionRef = useRef(null);
 
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const [drawingPoints, setDrawingPoints] = useState([]);
   const [tempPoint, setTempPoint] = useState(null);
-  const [snapIndicator, setSnapIndicator] = useState(null);
+  const [selectionBox, setSelectionBox] = useState(null);
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [spacePanActive, setSpacePanActive] = useState(false);
 
   const cancelDrawing = () => {
     setDrawingPoints([]);
     setTempPoint(null);
-    setSnapIndicator(null);
   };
 
   const handleSelectObject = (id) => {
-    if (activeTool !== 'select') return;
+    if (activeTool !== 'select' && activeTool !== 'multi_select') return;
     
     if (multiSelectEnabled) {
       if (selectedObjectIds.includes(id)) {
@@ -55,12 +210,29 @@ export default function CanvasStage({
   // Track key press for escaping drawing state
   useEffect(() => {
     const handleKeyDown = (e) => {
+      const target = e.target;
+      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable) {
+        return;
+      }
       if (e.key === 'Escape') {
         cancelDrawing();
       }
+      if (e.code === 'Space') {
+        e.preventDefault();
+        setSpacePanActive(true);
+      }
+    };
+    const handleKeyUp = (e) => {
+      if (e.code === 'Space') {
+        setSpacePanActive(false);
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
   }, [drawingPoints]);
 
   // Get localized cursor coordinates relative to scale and pan positions
@@ -108,12 +280,17 @@ export default function CanvasStage({
   const handleStageMouseDown = (e) => {
     // Click on empty space deselects elements
     if (e.target === stageRef.current) {
-      setSelectedObjectId(null);
-      setSelectedObjectIds([]);
-      if (activeTool === 'select') return;
+      if ((activeTool === 'select' || activeTool === 'multi_select') && !spacePanActive) {
+        const pos = getRelativePointerPosition();
+        setSelectionBox({ x: pos.x, y: pos.y, width: 0, height: 0, startX: pos.x, startY: pos.y });
+        setIsSelecting(true);
+        setSelectedObjectId(null);
+        setSelectedObjectIds([]);
+        return;
+      }
     }
 
-    if (activeTool === 'pan' || e.evt.button === 1) {
+    if (activeTool === 'pan' || spacePanActive || e.evt.button === 1) {
       // Middle click or Pan tool allows panning by default dragging
       return;
     }
@@ -150,16 +327,15 @@ export default function CanvasStage({
             blueprint_id: null,
             object_type: 'lot',
             object_data: {
-              name: `Block ${Math.floor(Math.random() * 5) + 1} Lot ${Math.floor(Math.random() * 15) + 1}`,
               points: [...drawingPoints],
               fillColor: '#10b981', // default available green
               borderColor: '#047857'
             },
-            layer_order: 2,
+            layer_order: 4,
             is_visible: true,
             is_locked: false
           };
-          setObjects([...objects, newLot]);
+          commitObjects([...objects, newLot]);
           cancelDrawing();
           // Keep active tool for consecutive placements
           return;
@@ -176,7 +352,6 @@ export default function CanvasStage({
           id: `lot-${Date.now()}`,
           object_type: 'lot',
           object_data: {
-            name: `Block A Lot ${Math.floor(Math.random() * 20) + 1}`,
             points: [
               clickedPoint.x - 30, clickedPoint.y - 40,
               clickedPoint.x + 30, clickedPoint.y - 40,
@@ -186,7 +361,7 @@ export default function CanvasStage({
             fillColor: '#10b981',
             borderColor: '#047857'
           },
-          layer_order: 2,
+          layer_order: 4,
           is_visible: true,
           is_locked: false
         };
@@ -195,7 +370,7 @@ export default function CanvasStage({
           id: `tree-${Date.now()}`,
           object_type: 'tree',
           object_data: { x: clickedPoint.x, y: clickedPoint.y, radius: 12, fill: '#059669' },
-          layer_order: 3,
+          layer_order: 5,
           is_visible: true,
           is_locked: false
         };
@@ -204,7 +379,7 @@ export default function CanvasStage({
           id: `clubhouse-${Date.now()}`,
           object_type: 'clubhouse',
           object_data: { x: clickedPoint.x, y: clickedPoint.y, width: 90, height: 60, fill: '#0ea5e9', name: 'Grand Clubhouse' },
-          layer_order: 3,
+          layer_order: 5,
           is_visible: true,
           is_locked: false
         };
@@ -213,7 +388,7 @@ export default function CanvasStage({
           id: `pool-${Date.now()}`,
           object_type: 'pool',
           object_data: { x: clickedPoint.x, y: clickedPoint.y, width: 80, height: 45, fill: '#0284c7' },
-          layer_order: 3,
+          layer_order: 5,
           is_visible: true,
           is_locked: false
         };
@@ -222,7 +397,7 @@ export default function CanvasStage({
           id: `guard-${Date.now()}`,
           object_type: 'guard_house',
           object_data: { x: clickedPoint.x, y: clickedPoint.y, radius: 15, fill: '#f43f5e', name: 'Security Guardhouse' },
-          layer_order: 3,
+          layer_order: 5,
           is_visible: true,
           is_locked: false
         };
@@ -231,7 +406,7 @@ export default function CanvasStage({
           id: `light-${Date.now()}`,
           object_type: 'street_light',
           object_data: { x: clickedPoint.x, y: clickedPoint.y, radius: 8, fill: '#fbbf24' },
-          layer_order: 3,
+          layer_order: 5,
           is_visible: true,
           is_locked: false
         };
@@ -240,7 +415,7 @@ export default function CanvasStage({
           id: `label-${Date.now()}`,
           object_type: 'label',
           object_data: { x: clickedPoint.x, y: clickedPoint.y, text: 'New Street Label', fill: '#272727', fontSize: 13 },
-          layer_order: 4,
+          layer_order: 6,
           is_visible: true,
           is_locked: false
         };
@@ -259,7 +434,7 @@ export default function CanvasStage({
               clickedPoint.x - 100, clickedPoint.y + 60
             ]
           },
-          layer_order: 0,
+          layer_order: 3,
           is_visible: true,
           is_locked: false
         };
@@ -278,14 +453,14 @@ export default function CanvasStage({
               clickedPoint.x - 80, clickedPoint.y + 80
             ]
           },
-          layer_order: 0,
+          layer_order: 3,
           is_visible: true,
           is_locked: false
         };
       }
 
       if (newObj) {
-        setObjects([...objects, newObj]);
+        commitObjects([...objects, newObj]);
         // Keep active tool for consecutive placements
       }
     }
@@ -296,21 +471,42 @@ export default function CanvasStage({
     const pos = getRelativePointerPosition();
     let currentPoint = { x: pos.x, y: pos.y };
 
+    if (isSelecting && selectionBox) {
+      const nextBox = {
+        ...selectionBox,
+        x: Math.min(selectionBox.startX, currentPoint.x),
+        y: Math.min(selectionBox.startY, currentPoint.y),
+        width: Math.abs(currentPoint.x - selectionBox.startX),
+        height: Math.abs(currentPoint.y - selectionBox.startY)
+      };
+      setSelectionBox(nextBox);
+      return;
+    }
+
     if (snapEnabled) {
       const snap = findNearestSnapPoint(currentPoint, objects, 15, gridEnabled, 20);
       if (snap) {
         currentPoint = { x: snap.x, y: snap.y };
-        setSnapIndicator(snap);
-      } else {
-        setSnapIndicator(null);
       }
-    } else {
-      setSnapIndicator(null);
     }
 
     if (drawingPoints.length > 0) {
       setTempPoint(currentPoint);
     }
+  };
+
+  const handleStageMouseUp = () => {
+    if (!isSelecting || !selectionBox) return;
+
+    const selectedIds = objects
+      .filter((object) => object.is_visible !== false)
+      .filter((object) => boxesIntersect(selectionBox, objectClientBox(object)))
+      .map((object) => object.id);
+
+    setSelectedObjectIds(selectedIds);
+    setSelectedObjectId(selectedIds[selectedIds.length - 1] || null);
+    setSelectionBox(null);
+    setIsSelecting(false);
   };
 
   // Finishes drawing roads on double click or right click
@@ -329,93 +525,308 @@ export default function CanvasStage({
           name,
           roadType: type,
           points: [...drawingPoints],
+          curveMode: activeTool === 'road_curved' ? 'pen' : 'straight',
+          curveControls: activeTool === 'road_curved' ? buildCurveControls(drawingPoints) : [],
           width,
           borderThickness: 5,
           asphaltColor: '#cbd5e1',
           borderColor: '#475569',
-          tension: activeTool === 'road_curved' ? 0.35 : 0
+          tension: 0
         },
-        layer_order: 1,
+        layer_order: 2,
         is_visible: true,
         is_locked: false
       };
 
-      setObjects([...objects, newRoad]);
+      commitObjects([...objects, newRoad]);
       cancelDrawing();
       // Keep active tool for consecutive placements
     }
   };
 
   // Handles drag-and-drops of elements
+  const moveObjectData = (object, deltaX, deltaY) => {
+    const data = { ...object.object_data };
+    if (data.points) {
+      data.points = data.points.map((val, idx) => idx % 2 === 0 ? val + deltaX : val + deltaY);
+      if (Array.isArray(data.curveControls)) {
+        data.curveControls = data.curveControls.map((control) => ({
+          x: control.x + deltaX,
+          y: control.y + deltaY
+        }));
+      }
+    } else {
+      data.x = (data.x || 0) + deltaX;
+      data.y = (data.y || 0) + deltaY;
+    }
+    return { ...object, object_data: data };
+  };
+
+  const handleObjectDragStart = (e, objectId) => {
+    if (!selectedObjectIds.includes(objectId) || selectedObjectIds.length <= 1 || !stageRef.current) {
+      dragSessionRef.current = null;
+      return;
+    }
+
+    const nodePositions = new Map();
+    selectedObjectIds.forEach((id) => {
+      const node = stageRef.current.findOne('#' + id);
+      if (node) {
+        nodePositions.set(id, { x: node.x(), y: node.y() });
+      }
+    });
+
+    dragSessionRef.current = {
+      primaryId: objectId,
+      startX: e.target.x(),
+      startY: e.target.y(),
+      nodePositions
+    };
+  };
+
+  const handleObjectDragMove = (e, objectId) => {
+    const session = dragSessionRef.current;
+    if (!session || session.primaryId !== objectId) return;
+
+    const deltaX = e.target.x() - session.startX;
+    const deltaY = e.target.y() - session.startY;
+
+    session.nodePositions.forEach((position, id) => {
+      if (id === objectId) return;
+      const node = stageRef.current?.findOne('#' + id);
+      if (!node) return;
+      node.x(position.x + deltaX);
+      node.y(position.y + deltaY);
+    });
+
+    stageRef.current?.batchDraw();
+  };
+
+  const handleStageDragEnd = (e) => {
+    if (e.target !== stageRef.current) {
+      return;
+    }
+
+    setStagePos({ x: e.target.x(), y: e.target.y() });
+  };
+
+  const handleCanvasDrop = (e) => {
+    e.preventDefault();
+    const file = Array.from(e.dataTransfer.files || []).find((item) => item.type?.startsWith('image/'));
+    if (!file || !stageRef.current) return;
+
+    const rect = stageRef.current.container().getBoundingClientRect();
+    const position = {
+      x: (e.clientX - rect.left - stageRef.current.x()) / stageRef.current.scaleX(),
+      y: (e.clientY - rect.top - stageRef.current.y()) / stageRef.current.scaleY()
+    };
+    onAddImageLayerFile?.(file, position);
+  };
+
   const handleDragEnd = (e, objectId) => {
+    e.cancelBubble = true;
     const stage = stageRef.current;
     if (!stage) return;
 
-    let deltaX = e.target.x();
-    let deltaY = e.target.y();
+    const obj = objects.find((item) => item.id === objectId);
+    if (!obj) return;
+
+    const data = obj.object_data || {};
+    if (!data.points) {
+      let nextX = e.target.x();
+      let nextY = e.target.y();
+
+      const shouldSnap = snapEnabled && gridEnabled && data.kind !== 'reference_image';
+
+      if (shouldSnap) {
+        nextX = snapToGrid(nextX, 20);
+        nextY = snapToGrid(nextY, 20);
+        e.target.x(nextX);
+        e.target.y(nextY);
+      }
+
+      const deltaX = nextX - (data.x || 0);
+      const deltaY = nextY - (data.y || 0);
+      const movingIds = selectedObjectIds.includes(objectId) && selectedObjectIds.length > 1
+        ? selectedObjectIds
+        : [objectId];
+
+      commitObjects(objects.map((item) => {
+        if (!movingIds.includes(item.id)) return item;
+        return moveObjectData(item, deltaX, deltaY);
+      }));
+      return;
+    }
+
+    const sourceBox = getPointsBox(data.points);
+    let nextX = e.target.x();
+    let nextY = e.target.y();
 
     // Snap to grid if locked dragging
     if (snapEnabled && gridEnabled) {
-      deltaX = snapToGrid(deltaX, 20);
-      deltaY = snapToGrid(deltaY, 20);
-      e.target.x(deltaX);
-      e.target.y(deltaY);
+      nextX = snapToGrid(nextX, 20);
+      nextY = snapToGrid(nextY, 20);
+      e.target.x(nextX);
+      e.target.y(nextY);
     }
 
-    const updated = objects.map((obj) => {
-      if (obj.id === objectId) {
-        const data = { ...obj.object_data };
-        if (data.points) {
-          // Transform individual polyline vertices relative to delta
-          data.points = data.points.map((val, idx) => idx % 2 === 0 ? val + deltaX : val + deltaY);
-          // Reset line/polygon offsets so next drag starts relative to 0 again
-          e.target.x(0);
-          e.target.y(0);
-        } else {
-          // For absolute x/y shapes, deltaX/deltaY is already the new absolute coordinate on the canvas stage.
-          // Do not add to original x/y and do not reset target position to 0.
-          data.x = deltaX;
-          data.y = deltaY;
-        }
+    const deltaX = nextX - sourceBox.x;
+    const deltaY = nextY - sourceBox.y;
+    const movingIds = selectedObjectIds.includes(objectId) && selectedObjectIds.length > 1
+      ? selectedObjectIds
+      : [objectId];
 
-        return { ...obj, object_data: data };
-      }
-      return obj;
+    const updated = objects.map((obj) => {
+      if (!movingIds.includes(obj.id)) return obj;
+      return moveObjectData(obj, deltaX, deltaY);
     });
 
-    setObjects(updated);
+    dragSessionRef.current = null;
+    commitObjects(updated);
+  };
+
+  const handleTransformEnd = (e, objectId) => {
+    const node = typeof e.target?.nodes === 'function'
+      ? e.target.nodes()[0]
+      : e.target;
+
+    if (!node) return;
+
+    const scaleX = node.scaleX();
+    const scaleY = node.scaleY();
+    const updated = objects.map((obj) => {
+      if (obj.id !== objectId) return obj;
+
+      const data = { ...obj.object_data };
+
+      if (data.points) {
+        const sourceBox = getPointsBox(data.points);
+        const nextPoints = [];
+        for (let idx = 0; idx < data.points.length; idx += 2) {
+          const transformed = applyNodeTransformToPoint(data.points[idx], data.points[idx + 1], sourceBox, node);
+          nextPoints.push(transformed.x, transformed.y);
+        }
+        data.points = nextPoints;
+        if (Array.isArray(data.curveControls)) {
+          data.curveControls = data.curveControls.map((control) => (
+            applyNodeTransformToPoint(control.x, control.y, sourceBox, node)
+          ));
+        }
+        data.rotation = 0;
+      } else {
+        data.x = node.x();
+        data.y = node.y();
+        data.rotation = node.rotation();
+
+        if (typeof data.width === 'number') {
+          data.width = Math.max(1, node.width() * scaleX);
+        }
+        if (typeof data.height === 'number') {
+          data.height = Math.max(1, node.height() * scaleY);
+        }
+        if (typeof data.radius === 'number') {
+          data.radius = Math.max(1, data.radius * Math.max(scaleX, scaleY));
+        }
+      }
+
+      node.scaleX(1);
+      node.scaleY(1);
+      node.rotation(data.points ? 0 : node.rotation());
+      return { ...obj, object_data: data };
+    });
+
+    commitObjects(updated);
+  };
+
+  const updateCurveControl = (roadId, controlIndex, position, shouldCommit = false) => {
+    const updater = shouldCommit ? commitObjects : setObjects;
+
+    updater(objects.map((obj) => {
+      if (obj.id !== roadId) return obj;
+
+      const data = { ...obj.object_data };
+      const controls = [...(data.curveControls || buildCurveControls(data.points || []))];
+      controls[controlIndex] = position;
+
+      return {
+        ...obj,
+        object_data: {
+          ...data,
+          curveMode: 'pen',
+          curveControls: controls,
+          tension: 0
+        }
+      };
+    }));
   };
 
   // Auto-Transformer bounding box hook
   useEffect(() => {
-    if (selectedObjectId) {
-      const selectedNode = stageRef.current.findOne('#' + selectedObjectId);
-      if (selectedNode && transformerRef.current) {
-        transformerRef.current.nodes([selectedNode]);
-        transformerRef.current.getLayer().batchDraw();
-      }
+    if (!transformerRef.current || !stageRef.current) return;
+
+    if (selectedObjectIds.length === 0) {
+      transformerRef.current.nodes([]);
+      transformerRef.current.getLayer()?.batchDraw();
+      return;
     }
-  }, [selectedObjectId]);
+
+    const selectedNodes = selectedObjectIds
+      .map((id) => stageRef.current.findOne('#' + id))
+      .filter(Boolean);
+
+    transformerRef.current.nodes(selectedNodes);
+    transformerRef.current.getLayer()?.batchDraw();
+  }, [selectedObjectId, selectedObjectIds]);
 
   const sortedObjects = [...objects].sort((a, b) => (a.layer_order || 0) - (b.layer_order || 0));
 
   return (
-    <div className="flex-1 bg-slate-950 relative overflow-hidden h-full canvas-grid-bg">
+    <div
+      className="min-h-0 min-w-0 flex-1 bg-slate-950 relative overflow-auto h-full w-full canvas-grid-bg"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={handleCanvasDrop}
+    >
       <Stage
-        width={1000}
-        height={700}
+        width={STAGE_WIDTH}
+        height={STAGE_HEIGHT}
+        x={stagePos.x}
+        y={stagePos.y}
+        scaleX={zoom}
+        scaleY={zoom}
         ref={stageRef}
         onWheel={handleWheel}
         onMouseDown={handleStageMouseDown}
         onMouseMove={handleStageMouseMove}
+        onMouseUp={handleStageMouseUp}
         onDblClick={handleStageDoubleClick}
         onContextMenu={(e) => {
           e.evt.preventDefault();
           cancelDrawing();
         }}
-        draggable={activeTool === 'pan' || activeTool === 'select' || activeTool === 'multi_select'}
-        className="cursor-crosshair"
+        onDragEnd={handleStageDragEnd}
+        draggable={activeTool === 'pan' || spacePanActive}
+        className={activeTool === 'pan' || spacePanActive ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'}
       >
+        {/* Layer 0: Image layers */}
+        {layersVisible.reference !== false && (
+          <Layer>
+            {sortedObjects
+              .filter(o => o.object_type === 'image_layer' || (o.object_type === 'landmark' && o.object_data?.kind === 'reference_image'))
+              .map((imageObject) => (
+                <ImageLayerObject
+                  key={imageObject.id}
+                  object={imageObject}
+                  isSelected={selectedObjectIds.includes(imageObject.id)}
+                  canDrag={(activeTool === 'select' || activeTool === 'multi_select') && !imageObject.is_locked}
+                  onSelect={() => handleSelectObject(imageObject.id)}
+                  onDragStart={(e) => handleObjectDragStart(e, imageObject.id)}
+                  onDragMove={(e) => handleObjectDragMove(e, imageObject.id)}
+                  onDragEnd={(e) => handleDragEnd(e, imageObject.id)}
+                />
+              ))}
+          </Layer>
+        )}
+
         {/* Layer 1: Roads & Streets */}
         {layersVisible.roads !== false && (
           <Layer>
@@ -424,18 +835,46 @@ export default function CanvasStage({
               .filter(o => o.object_type === 'road')
               .map((road) => {
                 const data = road.object_data || {};
+                const localShape = getLocalPointShape(data.points || []);
+                const controls = data.curveControls || buildCurveControls(data.points || []);
+                const localControls = getLocalCurveControls(data.points || [], controls);
                 const width = data.width || 30;
                 const border = data.borderThickness || 5;
+                const isPenCurve = data.curveMode === 'pen' || (data.curveControls || []).length > 0;
+
+                if (isPenCurve) {
+                  return (
+                    <Shape
+                      key={`border-${road.id}`}
+                      x={localShape.x}
+                      y={localShape.y}
+                      rotation={data.rotation || 0}
+                      sceneFunc={(context, shape) => {
+                        drawCurvePath(context, localShape.points, localControls);
+                        context.strokeShape(shape);
+                      }}
+                      stroke={data.borderColor || '#334155'}
+                      strokeWidth={width + border * 2}
+                      lineCap="round"
+                      lineJoin="round"
+                      opacity={road.is_visible ? 1 : 0}
+                      listening={false}
+                    />
+                  );
+                }
                 
                 return (
                   <Line
                     key={`border-${road.id}`}
-                    points={data.points || []}
+                    x={localShape.x}
+                    y={localShape.y}
+                    points={localShape.points}
                     stroke={data.borderColor || '#334155'}
                     strokeWidth={width + border * 2}
                     lineCap="round"
                     lineJoin="round"
                     tension={data.tension || 0}
+                    rotation={data.rotation || 0}
                     opacity={road.is_visible ? 1 : 0}
                   />
                 );
@@ -446,19 +885,55 @@ export default function CanvasStage({
               .filter(o => o.object_type === 'road')
               .map((road) => {
                 const data = road.object_data || {};
+                const localShape = getLocalPointShape(data.points || []);
+                const controls = data.curveControls || buildCurveControls(data.points || []);
+                const localControls = getLocalCurveControls(data.points || [], controls);
+                const isPenCurve = data.curveMode === 'pen' || (data.curveControls || []).length > 0;
+
+                if (isPenCurve) {
+                  return (
+                    <Shape
+                      key={`asphalt-${road.id}`}
+                      id={road.id}
+                      x={localShape.x}
+                      y={localShape.y}
+                      rotation={data.rotation || 0}
+                      sceneFunc={(context, shape) => {
+                        drawCurvePath(context, localShape.points, localControls);
+                        context.strokeShape(shape);
+                      }}
+                      stroke={selectedObjectIds.includes(road.id) ? '#fbbf24' : (data.asphaltColor || '#cbd5e1')}
+                      strokeWidth={data.width || 30}
+                      lineCap="round"
+                      lineJoin="round"
+                      opacity={road.is_visible ? 1 : 0}
+                      onClick={() => handleSelectObject(road.id)}
+                      draggable={(activeTool === 'select' || activeTool === 'multi_select') && !road.is_locked}
+                      onDragStart={(e) => handleObjectDragStart(e, road.id)}
+                      onDragMove={(e) => handleObjectDragMove(e, road.id)}
+                      onDragEnd={(e) => handleDragEnd(e, road.id)}
+                    />
+                  );
+                }
+
                 return (
                   <Line
                     key={`asphalt-${road.id}`}
                     id={road.id}
-                    points={data.points || []}
+                    x={localShape.x}
+                    y={localShape.y}
+                    points={localShape.points}
                     stroke={selectedObjectIds.includes(road.id) ? '#fbbf24' : (data.asphaltColor || '#cbd5e1')}
                     strokeWidth={data.width || 30}
                     lineCap="round"
                     lineJoin="round"
                     tension={data.tension || 0}
+                    rotation={data.rotation || 0}
                     opacity={road.is_visible ? 1 : 0}
                     onClick={() => handleSelectObject(road.id)}
                     draggable={(activeTool === 'select' || activeTool === 'multi_select') && !road.is_locked}
+                    onDragStart={(e) => handleObjectDragStart(e, road.id)}
+                    onDragMove={(e) => handleObjectDragMove(e, road.id)}
                     onDragEnd={(e) => handleDragEnd(e, road.id)}
                   />
                 );
@@ -474,28 +949,35 @@ export default function CanvasStage({
               .map((lot) => {
                 const data = lot.object_data || {};
                 const isSelected = selectedObjectIds.includes(lot.id);
+                const localShape = getLocalPointShape(data.points || []);
                 
                 return (
                   <Group
                     key={lot.id}
                     id={lot.id}
+                    x={localShape.x}
+                    y={localShape.y}
                     draggable={(activeTool === 'select' || activeTool === 'multi_select') && !lot.is_locked}
                     onDragEnd={(e) => handleDragEnd(e, lot.id)}
+                    onDragStart={(e) => handleObjectDragStart(e, lot.id)}
+                    onDragMove={(e) => handleObjectDragMove(e, lot.id)}
                     onClick={() => handleSelectObject(lot.id)}
+                    rotation={data.rotation || 0}
+                    opacity={lot.is_visible ? (data.opacity ?? 1) : 0}
                   >
                     <Line
-                      points={data.points || []}
+                      points={localShape.points}
                       fill={data.fillColor || '#10b981'}
                       stroke={isSelected ? '#fbbf24' : (data.borderColor || '#047857')}
                       strokeWidth={isSelected ? 3 : 1.5}
                       closed={true}
-                      opacity={lot.is_visible ? 0.65 : 0}
+                      opacity={0.65}
                     />
                     {data.points && data.points.length >= 4 && (
                       <Text
                         text={data.name || ''}
-                        x={data.points[0]}
-                        y={data.points[1] - 12}
+                        x={localShape.points[0]}
+                        y={localShape.points[1] - 12}
                         fontSize={10}
                         fontStyle="bold"
                         fill="#272727"
@@ -515,17 +997,23 @@ export default function CanvasStage({
             .filter(o => o.object_type === 'zone')
             .map((zone) => {
               const data = zone.object_data || {};
+              const localShape = getLocalPointShape(data.points || []);
               return (
                 <Line
                   key={zone.id}
                   id={zone.id}
-                  points={data.points || []}
+                  x={localShape.x}
+                  y={localShape.y}
+                  points={localShape.points}
                   fill={data.color || '#f43f5e'}
                   closed={true}
                   stroke={selectedObjectIds.includes(zone.id) ? '#fbbf24' : 'transparent'}
                   strokeWidth={selectedObjectIds.includes(zone.id) ? 3 : 0}
-                  opacity={zone.is_visible ? (data.opacity || 0.3) : 0}
+                  opacity={zone.is_visible ? (data.opacity ?? 0.3) : 0}
+                  rotation={data.rotation || 0}
                   draggable={(activeTool === 'select' || activeTool === 'multi_select') && !zone.is_locked}
+                  onDragStart={(e) => handleObjectDragStart(e, zone.id)}
+                  onDragMove={(e) => handleObjectDragMove(e, zone.id)}
                   onDragEnd={(e) => handleDragEnd(e, zone.id)}
                   onClick={() => handleSelectObject(zone.id)}
                 />
@@ -547,10 +1035,13 @@ export default function CanvasStage({
                   y={data.y || 0}
                   radius={radius}
                   fill={data.fill || '#10b981'}
-                  stroke={selectedObjectIds.includes(am.id) ? '#fbbf24' : '#334155'}
+                  stroke={selectedObjectIds.includes(am.id) ? '#fbbf24' : (data.borderColor || '#334155')}
                   strokeWidth={selectedObjectIds.includes(am.id) ? 3 : 1}
-                  opacity={am.is_visible ? 0.9 : 0}
+                  opacity={am.is_visible ? (data.opacity ?? 0.9) : 0}
+                  rotation={data.rotation || 0}
                   draggable={(activeTool === 'select' || activeTool === 'multi_select') && !am.is_locked}
+                  onDragStart={(e) => handleObjectDragStart(e, am.id)}
+                  onDragMove={(e) => handleObjectDragMove(e, am.id)}
                   onDragEnd={(e) => handleDragEnd(e, am.id)}
                   onClick={() => handleSelectObject(am.id)}
                 />
@@ -572,11 +1063,14 @@ export default function CanvasStage({
                   width={data.width || 80}
                   height={data.height || 50}
                   fill={data.fill || '#0284c7'}
-                  stroke={selectedObjectIds.includes(b.id) ? '#fbbf24' : '#1e293b'}
+                  stroke={selectedObjectIds.includes(b.id) ? '#fbbf24' : (data.borderColor || '#1e293b')}
                   strokeWidth={selectedObjectIds.includes(b.id) ? 3 : 1.5}
                   cornerRadius={4}
-                  opacity={b.is_visible ? 0.95 : 0}
+                  opacity={b.is_visible ? (data.opacity ?? 0.95) : 0}
+                  rotation={data.rotation || 0}
                   draggable={(activeTool === 'select' || activeTool === 'multi_select') && !b.is_locked}
+                  onDragStart={(e) => handleObjectDragStart(e, b.id)}
+                  onDragMove={(e) => handleObjectDragMove(e, b.id)}
                   onDragEnd={(e) => handleDragEnd(e, b.id)}
                   onClick={() => handleSelectObject(b.id)}
                 />
@@ -598,8 +1092,11 @@ export default function CanvasStage({
                   fill={selectedObjectIds.includes(lbl.id) ? '#fbbf24' : (data.fill || '#272727')}
                   fontSize={data.fontSize || 12}
                   fontStyle="bold"
-                  opacity={lbl.is_visible ? 1 : 0}
+                  opacity={lbl.is_visible ? (data.opacity ?? 1) : 0}
+                  rotation={data.rotation || 0}
                   draggable={(activeTool === 'select' || activeTool === 'multi_select') && !lbl.is_locked}
+                  onDragStart={(e) => handleObjectDragStart(e, lbl.id)}
+                  onDragMove={(e) => handleObjectDragMove(e, lbl.id)}
                   onDragEnd={(e) => handleDragEnd(e, lbl.id)}
                   onClick={() => handleSelectObject(lbl.id)}
                 />
@@ -609,19 +1106,91 @@ export default function CanvasStage({
 
         {/* Layer 4: Drawing Previews & Snap indicators */}
         <Layer>
-          {/* Snap Proximity Indicator Dot */}
-          {snapIndicator && (
-            <Circle
-              x={snapIndicator.x}
-              y={snapIndicator.y}
-              radius={6}
-              fill="transparent"
-              stroke="#fbbf24"
-              strokeWidth={2}
-              shadowColor="#fbbf24"
-              shadowBlur={4}
+          <Transformer
+            ref={transformerRef}
+            rotateEnabled={true}
+            resizeEnabled={selectedObjectIds.length <= 1}
+            ignoreStroke={true}
+            onTransformEnd={(e) => {
+              if (selectedObjectId) {
+                handleTransformEnd(e, selectedObjectId);
+              }
+            }}
+            boundBoxFunc={(oldBox, newBox) => {
+              if (newBox.width < 8 || newBox.height < 8) return oldBox;
+              return newBox;
+            }}
+            anchorStroke="#10b981"
+            anchorFill="#ffffff"
+            anchorSize={14}
+            anchorCornerRadius={4}
+            rotateAnchorOffset={42}
+            padding={8}
+            borderStrokeWidth={2}
+            borderStroke="#10b981"
+            borderDash={[4, 4]}
+          />
+
+          {selectionBox && (
+            <Rect
+              x={selectionBox.x}
+              y={selectionBox.y}
+              width={selectionBox.width}
+              height={selectionBox.height}
+              fill="#10b981"
+              opacity={0.08}
+              stroke="#10b981"
+              strokeWidth={1.5}
+              dash={[6, 4]}
             />
           )}
+
+          {sortedObjects
+            .filter((road) => (
+              road.object_type === 'road' &&
+              selectedObjectIds.includes(road.id) &&
+              (road.object_data?.curveMode === 'pen' || (road.object_data?.curveControls || []).length > 0)
+            ))
+            .flatMap((road) => {
+              const data = road.object_data || {};
+              const controls = data.curveControls || buildCurveControls(data.points || []);
+
+          return controls.map((control, idx) => {
+                const startX = data.points[idx * 2];
+                const startY = data.points[idx * 2 + 1];
+                const endX = data.points[(idx + 1) * 2];
+                const endY = data.points[(idx + 1) * 2 + 1];
+
+                return (
+                  <Group key={`${road.id}-curve-control-${idx}`}>
+                    <Line
+                      points={[startX, startY, control.x, control.y, endX, endY]}
+                      stroke="#10b981"
+                      strokeWidth={1}
+                      dash={[4, 4]}
+                      opacity={0.7}
+                    />
+                    <Circle
+                      x={control.x}
+                      y={control.y}
+                      radius={9}
+                      fill="#ffffff"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      draggable
+                      onDragMove={(e) => {
+                        e.cancelBubble = true;
+                        updateCurveControl(road.id, idx, { x: e.target.x(), y: e.target.y() });
+                      }}
+                      onDragEnd={(e) => {
+                        e.cancelBubble = true;
+                        updateCurveControl(road.id, idx, { x: e.target.x(), y: e.target.y() }, true);
+                      }}
+                    />
+                  </Group>
+                );
+              });
+            })}
 
           {/* Drawing Polyline Preview lines */}
           {drawingPoints.length > 0 && tempPoint && (
@@ -635,17 +1204,6 @@ export default function CanvasStage({
             />
           )}
 
-          {/* Visual anchor dots for lot drawing */}
-          {activeTool === 'lot_polygon' && drawingPoints.length > 0 && (
-            <Circle
-              x={drawingPoints[0]}
-              y={drawingPoints[1]}
-              radius={8}
-              fill="transparent"
-              stroke="#fbbf24"
-              strokeWidth={2}
-            />
-          )}
         </Layer>
       </Stage>
 
@@ -654,7 +1212,7 @@ export default function CanvasStage({
         <span className="font-bold text-slate-400 uppercase tracking-wider block">Editor Instructions</span>
         <div className="flex gap-3 text-slate-500 font-medium">
           <span>• Double-click to complete roads.</span>
-          <span>• Click the start point (yellow circle) to complete lot polygons.</span>
+          <span>• Click the first corner again to complete lot polygons.</span>
           <span>• Press ESC to cancel drawing.</span>
         </div>
       </div>

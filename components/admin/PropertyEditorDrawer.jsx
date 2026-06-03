@@ -1,9 +1,12 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Loader2, Save, Trash2, Unlink, X } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertCircle, Loader2, RefreshCw, Save, Trash2, Unlink, X } from 'lucide-react';
+import { generatePropertyCode } from '@/lib/properties/numbering';
 
 const EMPTY_FORM = {
+  village_code: '',
+  phase_number: '1',
   property_code: '',
   block_number: '',
   lot_number: '',
@@ -45,6 +48,8 @@ function buildForm(property, blueprintObject) {
 
   return {
     ...EMPTY_FORM,
+    village_code: property?.village_code || '',
+    phase_number: property?.phase_number || valueFromObjectData(objectData, ['phase_number', 'phaseNumber', 'phase'], '1'),
     property_code: property?.property_code || valueFromObjectData(objectData, ['property_code', 'propertyCode'], guessedCode),
     block_number: property?.block_number || blockNumber,
     lot_number: property?.lot_number || lotNumber,
@@ -97,6 +102,8 @@ export default function PropertyEditorDrawer({
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [checkingLot, setCheckingLot] = useState(false);
+  const [lotHelper, setLotHelper] = useState('');
   const [error, setError] = useState('');
 
   const isLinked = Boolean(property?.id);
@@ -109,6 +116,7 @@ export default function PropertyEditorDrawer({
     const timer = setTimeout(() => {
       setForm(buildForm(property, blueprintObject));
       setError('');
+      setLotHelper('');
     }, 0);
 
     return () => clearTimeout(timer);
@@ -117,6 +125,7 @@ export default function PropertyEditorDrawer({
   const canSubmit = useMemo(() => {
     return Boolean(
       form.property_code &&
+      form.phase_number &&
       form.block_number &&
       form.lot_number &&
       form.property_type &&
@@ -131,8 +140,64 @@ export default function PropertyEditorDrawer({
   }, [form]);
 
   const updateField = (field, value) => {
-    setForm((current) => ({ ...current, [field]: value }));
+    setForm((current) => {
+      const next = { ...current, [field]: value };
+      if (['village_code', 'phase_number', 'block_number', 'lot_number'].includes(field)) {
+        next.property_code = generatePropertyCode({
+          villageCode: next.village_code,
+          phaseNumber: next.phase_number,
+          blockNumber: next.block_number,
+          lotNumber: next.lot_number
+        });
+      }
+      return next;
+    });
   };
+
+  const refreshLotNumber = useCallback(async ({ force = true } = {}) => {
+    if (!villageId || !form.phase_number || !form.block_number) return;
+    if (!force && isLinked) return;
+
+    setCheckingLot(true);
+    setLotHelper('Checking next available lot number...');
+    try {
+      const params = new URLSearchParams({
+        villageId,
+        phaseNumber: form.phase_number,
+        blockNumber: form.block_number
+      });
+      if (property?.id) params.set('propertyId', property.id);
+
+      const res = await fetch(`/api/admin/properties/from-blueprint?${params.toString()}`);
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || 'Lot number could not be checked.');
+
+      setForm((current) => ({
+        ...current,
+        village_code: payload.villageCode || current.village_code,
+        phase_number: payload.phaseNumber || current.phase_number,
+        block_number: payload.blockNumber || current.block_number,
+        lot_number: payload.lotNumber || current.lot_number,
+        property_code: payload.propertyCode || current.property_code
+      }));
+      setLotHelper(`Next available lot number: L${payload.lotNumber}`);
+    } catch (err) {
+      setLotHelper('');
+      setError(err.message || 'Lot number could not be checked.');
+    } finally {
+      setCheckingLot(false);
+    }
+  }, [form.block_number, form.phase_number, isLinked, property, villageId]);
+
+  useEffect(() => {
+    if (!open || !form.block_number || !form.phase_number) return undefined;
+    const timer = setTimeout(() => {
+      const phaseChanged = String(form.phase_number || '') !== String(property?.phase_number || '1');
+      const blockChanged = String(form.block_number || '') !== String(property?.block_number || '');
+      refreshLotNumber({ force: !isLinked || phaseChanged || blockChanged });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [open, form.phase_number, form.block_number, isLinked, property, refreshLotNumber]);
 
   const saveProperty = async () => {
     setSaving(true);
@@ -226,11 +291,62 @@ export default function PropertyEditorDrawer({
           )}
 
           <section className={sectionClass}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-extrabold text-[#272727]">Auto Numbering</h3>
+                <p className="mt-1 text-xs text-[#64748b]">
+                  Lot number is automatically counted based on the selected phase and block.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => refreshLotNumber({ force: true })}
+                disabled={checkingLot || !form.phase_number || !form.block_number}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[#dbe4ee] bg-white px-3 py-2 text-xs font-bold text-[#272727] transition hover:bg-[#f8fafc] disabled:opacity-60"
+              >
+                {checkingLot ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                Refresh Lot
+              </button>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Village Code" required>
+                <input className={`${inputClass} bg-[#f8fafc] font-bold uppercase`} value={form.village_code} readOnly />
+              </Field>
+              <Field label="Phase Number" required>
+                <input type="number" min="1" className={inputClass} value={form.phase_number} onChange={(e) => updateField('phase_number', e.target.value)} />
+              </Field>
+              <Field label="Block Number" required>
+                <input type="number" min="1" className={inputClass} value={form.block_number} onChange={(e) => updateField('block_number', e.target.value)} />
+              </Field>
+              <Field label="Lot Number" required>
+                <input
+                  type="number"
+                  min="1"
+                  className={`${inputClass} ${isSuperAdmin ? '' : 'bg-[#f8fafc]'}`}
+                  value={form.lot_number}
+                  readOnly={!isSuperAdmin}
+                  onChange={(e) => updateField('lot_number', e.target.value)}
+                />
+              </Field>
+              <Field label="Property Code" required>
+                <input
+                  className={`${inputClass} bg-[#f8fafc] font-extrabold uppercase`}
+                  value={form.property_code}
+                  readOnly={!isSuperAdmin}
+                  onChange={(e) => updateField('property_code', e.target.value)}
+                />
+              </Field>
+            </div>
+            {lotHelper && (
+              <p className="mt-3 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+                {lotHelper}
+              </p>
+            )}
+          </section>
+
+          <section className={sectionClass}>
             <h3 className="text-sm font-extrabold text-[#272727]">Basic</h3>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field label="Property Code" required>
-                <input className={inputClass} value={form.property_code} onChange={(e) => updateField('property_code', e.target.value)} />
-              </Field>
               <Field label="Property Type" required>
                 <select className={inputClass} value={form.property_type} onChange={(e) => updateField('property_type', e.target.value)}>
                   <option value="lot">Lot</option>
@@ -239,12 +355,6 @@ export default function PropertyEditorDrawer({
                   <option value="duplex">Duplex</option>
                   <option value="commercial_lot">Commercial Lot</option>
                 </select>
-              </Field>
-              <Field label="Block Number" required>
-                <input className={inputClass} value={form.block_number} onChange={(e) => updateField('block_number', e.target.value)} />
-              </Field>
-              <Field label="Lot Number" required>
-                <input className={inputClass} value={form.lot_number} onChange={(e) => updateField('lot_number', e.target.value)} />
               </Field>
               <Field label="Street Name">
                 <input className={inputClass} value={form.street_name} onChange={(e) => updateField('street_name', e.target.value)} />

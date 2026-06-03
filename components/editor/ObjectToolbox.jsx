@@ -24,7 +24,7 @@ export default function ObjectToolbox({ activeTool, setActiveTool }) {
   const tools = [
     { id: 'select', name: 'Select / Move', icon: MousePointer, category: 'general', shortcut: 'S / 1' },
     { id: 'multi_select', name: 'Multi-Select', icon: MultiSelectIcon, category: 'general', shortcut: 'M' },
-    { id: 'pan', name: 'Pan Workspace', icon: Navigation, category: 'general', shortcut: 'P / 2' },
+    { id: 'pan', name: 'Pan Workspace', icon: Navigation, category: 'general', shortcut: 'Spacebar / P' },
     
     { id: 'road_straight', name: 'Straight Road', icon: Layers, category: 'roads', shortcut: 'R' },
     { id: 'road_curved', name: 'Curved Road', icon: Compass, category: 'roads', shortcut: 'C' },
@@ -98,7 +98,7 @@ export default function ObjectToolbox({ activeTool, setActiveTool }) {
   };
 
   return (
-    <aside className="w-52 bg-slate-900 border-r border-slate-800/80 p-4 flex flex-col gap-6 overflow-y-auto select-none">
+    <aside className="w-52 flex-shrink-0 bg-slate-900 border-r border-slate-800/80 p-4 flex flex-col gap-6 overflow-y-auto select-none">
       {renderSection('Controls', 'general')}
       <hr className="border-slate-800/60" />
       {renderSection('Subdivision Roads', 'roads')}

@@ -17,15 +17,19 @@ export default function PropertiesPanel({
   const fetchAvailableProperties = useCallback(async () => {
     setLoadingProps(true);
     try {
-      // Fetch properties inside this village that are either unlinked or currently linked to this object
       const { data, error } = await supabase
         .from('properties')
-        .select('id, property_code, block_number, lot_number, status')
-        .eq('village_id', villageId)
-        .or(`blueprint_object_id.is.null,blueprint_object_id.eq.${selectedObject.id}`);
+        .select('id, blueprint_object_id, property_code, block_number, lot_number, status, price, lot_size')
+        .eq('village_id', villageId);
 
       if (!error && data) {
-        setProperties(data);
+        setProperties(
+          data.filter((property) => (
+            !property.blueprint_object_id ||
+            property.blueprint_object_id === selectedObject.id ||
+            property.id === selectedObject.linked_property_id
+          ))
+        );
       }
     } catch (err) {
       console.error('Error fetching unlinked properties:', err);
@@ -36,13 +40,15 @@ export default function PropertiesPanel({
 
   useEffect(() => {
     if (selectedObject && (selectedObject.object_type === 'lot' || selectedObject.object_type === 'house') && villageId) {
-      fetchAvailableProperties();
+      const timer = setTimeout(() => fetchAvailableProperties(), 0);
+      return () => clearTimeout(timer);
     }
+    return undefined;
   }, [selectedObject, villageId, fetchAvailableProperties]);
 
   if (!selectedObject) {
     return (
-      <aside className="w-64 bg-slate-900 border-l border-slate-800/80 p-6 flex flex-col justify-center items-center text-center text-slate-500 select-none">
+      <aside className="w-[352px] bg-slate-900 border-l border-slate-800/80 p-6 flex flex-col justify-center items-center text-center text-slate-500 select-none">
         <HelpCircle className="w-10 h-10 mb-3 text-slate-700" />
         <h4 className="text-sm font-semibold text-slate-400">No Object Selected</h4>
         <p className="text-[11px] mt-1 leading-normal max-w-[160px]">
@@ -53,6 +59,7 @@ export default function PropertiesPanel({
   }
 
   const { object_type, object_data = {}, is_locked = false } = selectedObject;
+  const isImageLayer = object_type === 'image_layer' || (object_type === 'landmark' && object_data.kind === 'reference_image');
 
   const handleDataChange = (key, value) => {
     onUpdateObject({
@@ -72,14 +79,42 @@ export default function PropertiesPanel({
   };
 
   const handleLinkProperty = (propertyId) => {
+    const linkedProperty = properties.find((property) => property.id === propertyId);
     onUpdateObject({
       ...selectedObject,
-      linked_property_id: propertyId || null
+      linked_property_id: propertyId || null,
+      object_data: linkedProperty ? {
+        ...object_data,
+        block_number: linkedProperty.block_number,
+        lot_number: linkedProperty.lot_number,
+        property_code: linkedProperty.property_code
+      } : object_data
+    });
+  };
+
+  const handleLotFieldChange = (key, value) => {
+    const nextData = {
+      ...object_data,
+      [key]: value
+    };
+
+    const matchedProperty = properties.find((property) => (
+      String(property.block_number || '').trim().toLowerCase() === String(nextData.block_number || '').trim().toLowerCase() &&
+      String(property.lot_number || '').trim().toLowerCase() === String(nextData.lot_number || '').trim().toLowerCase()
+    ));
+
+    onUpdateObject({
+      ...selectedObject,
+      linked_property_id: matchedProperty?.id || selectedObject.linked_property_id || null,
+      object_data: matchedProperty ? {
+        ...nextData,
+        property_code: matchedProperty.property_code
+      } : nextData
     });
   };
 
   return (
-    <aside className="w-64 bg-slate-900 border-l border-slate-800/80 p-5 flex flex-col h-full overflow-y-auto select-none gap-5">
+    <aside className="w-[352px] bg-slate-900 border-l border-slate-800/80 p-5 flex flex-col select-none gap-5">
       <div className="flex items-center justify-between border-b border-slate-800 pb-3">
         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
           Properties Panel
@@ -105,6 +140,127 @@ export default function PropertiesPanel({
           </button>
         </div>
       </div>
+
+      <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-950/30 p-3">
+        <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Object Inspector</span>
+
+        {(object_data.x !== undefined || isImageLayer) && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[9px] font-semibold text-slate-500 uppercase tracking-wider mb-1">X</label>
+              <input
+                type="number"
+                value={Math.round(object_data.x || 0)}
+                onChange={(e) => handleDataChange('x', parseFloat(e.target.value) || 0)}
+                className="w-full bg-slate-950/60 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[9px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Y</label>
+              <input
+                type="number"
+                value={Math.round(object_data.y || 0)}
+                onChange={(e) => handleDataChange('y', parseFloat(e.target.value) || 0)}
+                className="w-full bg-slate-950/60 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none"
+              />
+            </div>
+          </div>
+        )}
+
+        {(object_data.width !== undefined || isImageLayer) && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[9px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Width</label>
+              <input
+                type="number"
+                value={Math.round(object_data.width || 0)}
+                onChange={(e) => handleDataChange('width', Math.max(1, parseFloat(e.target.value) || 1))}
+                className="w-full bg-slate-950/60 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[9px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Height</label>
+              <input
+                type="number"
+                value={Math.round(object_data.height || 0)}
+                onChange={(e) => handleDataChange('height', Math.max(1, parseFloat(e.target.value) || 1))}
+                className="w-full bg-slate-950/60 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none"
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-[9px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Rotation</label>
+            <input
+              type="number"
+              value={Math.round(object_data.rotation || 0)}
+              onChange={(e) => handleDataChange('rotation', parseFloat(e.target.value) || 0)}
+              className="w-full bg-slate-950/60 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-[9px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Layer</label>
+            <input
+              type="number"
+              value={selectedObject.layer_order || 0}
+              onChange={(e) => onUpdateObject({ ...selectedObject, layer_order: parseInt(e.target.value) || 0 })}
+              className="w-full bg-slate-950/60 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 outline-none"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[9px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Opacity</label>
+          <input
+            type="range"
+            min="0.05"
+            max="1"
+            step="0.05"
+            value={object_data.opacity ?? 1}
+            onChange={(e) => handleDataChange('opacity', parseFloat(e.target.value))}
+            className="w-full h-1 bg-slate-950 rounded-lg appearance-none cursor-pointer"
+          />
+        </div>
+      </div>
+
+      {isImageLayer && (
+        <div className="space-y-4 rounded-xl border border-sky-500/10 bg-sky-500/5 p-3.5">
+          <h5 className="text-[10px] font-bold text-sky-300 uppercase tracking-wider">Image Layer</h5>
+          <div>
+            <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+              Layer Name
+            </label>
+            <input
+              type="text"
+              value={object_data.name || ''}
+              onChange={(e) => handleDataChange('name', e.target.value)}
+              className="w-full bg-slate-950/50 border border-slate-800 focus:border-sky-500/50 rounded-lg p-2 text-xs text-slate-200 outline-none"
+            />
+          </div>
+          <div className="space-y-2">
+            {[
+              ['showInEditor', 'Show in editor'],
+              ['showInAdminPreview', 'Show in admin preview'],
+              ['showInPublicMap', 'Show in public map']
+            ].map(([key, label]) => (
+              <label key={key} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-[11px] font-semibold text-slate-300">
+                <span>{label}</span>
+                <input
+                  type="checkbox"
+                  checked={object_data[key] !== false}
+                  onChange={(e) => handleDataChange(key, e.target.checked)}
+                  className="h-4 w-4 accent-emerald-500"
+                />
+              </label>
+            ))}
+          </div>
+          <p className="text-[10px] leading-relaxed text-slate-500">
+            Hide this layer before publishing if it should not appear on the public customer map.
+          </p>
+        </div>
+      )}
 
       {/* RENDER FOR ROADS */}
       {object_type === 'road' && (
@@ -165,6 +321,31 @@ export default function PropertiesPanel({
               className="w-full bg-slate-950/50 border border-slate-800 focus:border-emerald-500/50 rounded-lg p-2 text-xs text-slate-200 outline-none"
             />
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Road Fill
+              </label>
+              <input
+                type="color"
+                value={object_data.asphaltColor || '#cbd5e1'}
+                onChange={(e) => handleDataChange('asphaltColor', e.target.value)}
+                className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950/50 p-1.5 outline-none cursor-pointer"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Road Border
+              </label>
+              <input
+                type="color"
+                value={object_data.borderColor || '#475569'}
+                onChange={(e) => handleDataChange('borderColor', e.target.value)}
+                className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950/50 p-1.5 outline-none cursor-pointer"
+              />
+            </div>
+          </div>
         </div>
       )}
 
@@ -200,45 +381,91 @@ export default function PropertiesPanel({
 
           <div>
             <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-              Draft Lot Label / ID
+              Property Code
             </label>
             <input
               type="text"
-              value={object_data.name || ''}
-              onChange={(e) => handleDataChange('name', e.target.value)}
-              placeholder="e.g. Block 1 Lot 5"
+              value={object_data.property_code || ''}
+              onChange={(e) => handleDataChange('property_code', e.target.value)}
+              placeholder="Auto-filled when linked"
               className="w-full bg-slate-950/50 border border-slate-800 focus:border-emerald-500/50 rounded-lg p-2 text-xs text-slate-200 outline-none"
             />
           </div>
 
-          <div>
-            <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-              Block Number
-            </label>
-            <input
-              type="text"
-              value={object_data.block_number || ''}
-              onChange={(e) => handleDataChange('block_number', e.target.value)}
-              className="w-full bg-slate-950/50 border border-slate-800 focus:border-emerald-500/50 rounded-lg p-2 text-xs text-slate-200 outline-none"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Block Number
+              </label>
+              <input
+                type="text"
+                value={object_data.block_number || ''}
+                onChange={(e) => handleLotFieldChange('block_number', e.target.value)}
+                placeholder="Admin input"
+                className="w-full bg-slate-950/50 border border-slate-800 focus:border-emerald-500/50 rounded-lg p-2 text-xs text-slate-200 outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Lot Number
+              </label>
+              <input
+                type="text"
+                value={object_data.lot_number || ''}
+                onChange={(e) => handleLotFieldChange('lot_number', e.target.value)}
+                placeholder="Admin input"
+                className="w-full bg-slate-950/50 border border-slate-800 focus:border-emerald-500/50 rounded-lg p-2 text-xs text-slate-200 outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3 text-[10px] leading-relaxed text-slate-500">
+            Entering a block and lot number will automatically link this shape when it matches an existing village property.
           </div>
 
           <div>
             <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-              Lot Number
+              Linked Property ID
             </label>
             <input
               type="text"
-              value={object_data.lot_number || ''}
-              onChange={(e) => handleDataChange('lot_number', e.target.value)}
+              value={selectedObject.linked_property_id || ''}
+              readOnly
+              placeholder="Not linked yet"
               className="w-full bg-slate-950/50 border border-slate-800 focus:border-emerald-500/50 rounded-lg p-2 text-xs text-slate-200 outline-none"
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Fill Color
+              </label>
+              <input
+                type="color"
+                value={object_data.fillColor || '#10b981'}
+                onChange={(e) => handleDataChange('fillColor', e.target.value)}
+                className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950/50 p-1.5 outline-none cursor-pointer"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Border Color
+              </label>
+              <input
+                type="color"
+                value={object_data.borderColor || '#047857'}
+                onChange={(e) => handleDataChange('borderColor', e.target.value)}
+                className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950/50 p-1.5 outline-none cursor-pointer"
+              />
+            </div>
           </div>
         </div>
       )}
 
       {/* RENDER FOR ZONES */}
-      {object_type.startsWith('zone_') || object_type === 'zone' && (
+      {(object_type.startsWith('zone_') || object_type === 'zone') && (
         <div className="space-y-4">
           <div>
             <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
@@ -285,7 +512,7 @@ export default function PropertiesPanel({
       )}
 
       {/* RENDER FOR OTHER ELEMENTS (TREES / TEXT) */}
-      {object_type === 'label_text' && (
+      {object_type === 'label' && (
         <div className="space-y-4">
           <div>
             <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
@@ -313,7 +540,7 @@ export default function PropertiesPanel({
         </div>
       )}
 
-      {object_type.startsWith('amenity_') && (
+      {['tree', 'street_light', 'guard_house', 'clubhouse', 'pool', 'park', 'amenity', 'landmark'].includes(object_type) && object_data.kind !== 'reference_image' && (
         <div className="space-y-4">
           <div>
             <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
@@ -333,6 +560,31 @@ export default function PropertiesPanel({
               }}
               className="w-full bg-slate-950/50 border border-slate-800 focus:border-emerald-500/50 rounded-lg p-2 text-xs text-slate-200 outline-none"
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Fill Color
+              </label>
+              <input
+                type="color"
+                value={object_data.fill || '#10b981'}
+                onChange={(e) => handleDataChange('fill', e.target.value)}
+                className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950/50 p-1.5 outline-none cursor-pointer"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Border Color
+              </label>
+              <input
+                type="color"
+                value={object_data.borderColor || '#047857'}
+                onChange={(e) => handleDataChange('borderColor', e.target.value)}
+                className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950/50 p-1.5 outline-none cursor-pointer"
+              />
+            </div>
           </div>
         </div>
       )}

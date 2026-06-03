@@ -2,6 +2,7 @@ import React from 'react';
 import { createClient } from '@/lib/supabase/server';
 import Navbar from '@/components/layout/Navbar';
 import { 
+  ArrowLeft,
   MapPin, 
   Trees, 
   Map, 
@@ -127,6 +128,14 @@ export default async function VillageLandingPage({ params }) {
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
         
         <div className="absolute bottom-0 left-0 right-0 p-8 max-w-7xl mx-auto w-full z-10">
+          <Link
+            href="/customer/dashboard"
+            className="mb-5 inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/80 px-4 py-2 text-xs font-bold text-slate-200 shadow transition hover:border-emerald-500/40 hover:bg-emerald-500/10 hover:text-emerald-300"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Account
+          </Link>
+
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold mb-4 select-none">
             <Sparkles className="w-3.5 h-3.5" />
             <span>Interactive Vector Subdivision Blueprint Ready</span>

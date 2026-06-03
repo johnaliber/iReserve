@@ -16,6 +16,7 @@ import {
   PencilRuler,
   Settings,
   Shield,
+  User,
   Users
 } from 'lucide-react';
 
@@ -68,7 +69,7 @@ export default function Sidebar({ isOpen, isCollapsed = false, onClose }) {
       { name: 'Dashboard', href: '/village-admin/dashboard', icon: LayoutDashboard },
       { name: 'Villages / Properties', href: '/village-admin/properties', icon: Building },
       { name: 'Reservations / Siteviewings', href: '/village-admin/reservations', icon: Calendar },
-      { name: 'Payments / Booking Audit', href: '/accounting/dashboard', icon: CreditCard },
+      { name: 'Payments / Booking Audit', href: '/village-admin/payments-booking-audit', icon: CreditCard },
       { name: 'Reports', href: '/village-admin/reports', icon: BarChart },
       { name: 'Map Canvas Editor', href: '/village-admin/blueprint-preview', icon: Map },
       { name: 'Customer View Hub', href: '/village-admin/customer-view-hub', icon: Users },
@@ -96,6 +97,12 @@ export default function Sidebar({ isOpen, isCollapsed = false, onClose }) {
 
   const canManageAccounts = role === 'super_admin' || role === 'village_admin';
   const accountsHref = role === 'super_admin' ? '/super-admin/accounts' : '/village-admin/accounts';
+  const superAdminAccountLinks = [
+    { name: 'Customer', href: '/super-admin/accounts/customers', icon: User },
+    { name: 'Admin', href: '/super-admin/accounts/admins', icon: Building },
+    { name: 'Accounting', href: '/super-admin/accounts/accounting', icon: CreditCard },
+    { name: 'Superadmin', href: '/super-admin/accounts/superadmin', icon: Shield }
+  ];
 
   return (
     <>
@@ -143,23 +150,70 @@ export default function Sidebar({ isOpen, isCollapsed = false, onClose }) {
             })}
 
             {canManageAccounts && (
-              <Link
-                href={accountsHref}
-                onClick={onClose}
-                title={isCollapsed ? 'Manage Accounts' : undefined}
-                className={`flex min-h-11 items-center gap-3 rounded-xl border px-3 text-sm font-bold transition ${
-                  pathname === accountsHref || pathname.startsWith(`${accountsHref}/`)
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    : 'border-transparent text-[#64748b] hover:border-[#e2e8f0] hover:bg-[#f8fafc] hover:text-[#272727]'
-                } ${isCollapsed ? 'justify-center' : ''}`}
-              >
-                <Users className={`h-4.5 w-4.5 flex-shrink-0 ${
-                  pathname === accountsHref || pathname.startsWith(`${accountsHref}/`)
-                    ? 'text-emerald-600'
-                    : 'text-[#94a3b8]'
-                }`} />
-                {!isCollapsed && <span>Manage Accounts</span>}
-              </Link>
+              role === 'super_admin' ? (
+                <div className="space-y-1">
+                  <Link
+                    href={accountsHref}
+                    onClick={onClose}
+                    title={isCollapsed ? 'Manage Accounts' : undefined}
+                    className={`flex min-h-11 items-center gap-3 rounded-xl border px-3 text-sm font-bold transition ${
+                      pathname === accountsHref
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-transparent text-[#64748b] hover:border-[#e2e8f0] hover:bg-[#f8fafc] hover:text-[#272727]'
+                    } ${isCollapsed ? 'justify-center' : ''}`}
+                  >
+                    <Users className={`h-4.5 w-4.5 flex-shrink-0 ${
+                      pathname === accountsHref || pathname.startsWith(`${accountsHref}/`)
+                        ? 'text-emerald-600'
+                        : 'text-[#94a3b8]'
+                    }`} />
+                    {!isCollapsed && <span>Manage Accounts</span>}
+                  </Link>
+
+                  {!isCollapsed && (
+                    <div className="ml-4 space-y-1 border-l border-[#e2e8f0] pl-3">
+                      {superAdminAccountLinks.map((link) => {
+                        const Icon = link.icon;
+                        const isActive = pathname === link.href || pathname.startsWith(`${link.href}/`);
+
+                        return (
+                          <Link
+                            key={link.name}
+                            href={link.href}
+                            onClick={onClose}
+                            className={`flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs font-bold transition ${
+                              isActive
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : 'text-[#64748b] hover:bg-[#f8fafc] hover:text-[#272727]'
+                            }`}
+                          >
+                            <Icon className={`h-4 w-4 flex-shrink-0 ${isActive ? 'text-emerald-600' : 'text-[#94a3b8]'}`} />
+                            <span>{link.name}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <Link
+                  href={accountsHref}
+                  onClick={onClose}
+                  title={isCollapsed ? 'Manage Accounts' : undefined}
+                  className={`flex min-h-11 items-center gap-3 rounded-xl border px-3 text-sm font-bold transition ${
+                    pathname === accountsHref || pathname.startsWith(`${accountsHref}/`)
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : 'border-transparent text-[#64748b] hover:border-[#e2e8f0] hover:bg-[#f8fafc] hover:text-[#272727]'
+                  } ${isCollapsed ? 'justify-center' : ''}`}
+                >
+                  <Users className={`h-4.5 w-4.5 flex-shrink-0 ${
+                    pathname === accountsHref || pathname.startsWith(`${accountsHref}/`)
+                      ? 'text-emerald-600'
+                      : 'text-[#94a3b8]'
+                  }`} />
+                  {!isCollapsed && <span>Manage Accounts</span>}
+                </Link>
+              )
             )}
           </nav>
         </div>

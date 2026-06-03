@@ -1,9 +1,14 @@
 import { createClient } from '@/lib/supabase/server';
+import {
+  generatePropertyCode,
+  getNextLotNumber,
+  normalizeNumberPart,
+  normalizeVillageCode
+} from '@/lib/properties/numbering';
 
 export const dynamic = 'force-dynamic';
 
 const REQUIRED_FIELDS = [
-  'property_code',
   'block_number',
   'lot_number',
   'property_type',
@@ -19,6 +24,8 @@ const NUMERIC_FIELDS = new Set(['price', 'reservation_fee', 'lot_size', 'floor_a
 const INTEGER_FIELDS = new Set(['bedrooms', 'bathrooms', 'parking_slots']);
 const PROPERTY_FIELDS = [
   'property_code',
+  'village_code',
+  'phase_number',
   'block_number',
   'lot_number',
   'street_name',
@@ -65,6 +72,10 @@ function normalizePayload(formData = {}) {
 
     payload[field] = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
   }
+
+  payload.phase_number = normalizeNumberPart(payload.phase_number || '1');
+  payload.block_number = normalizeNumberPart(payload.block_number);
+  payload.lot_number = normalizeNumberPart(payload.lot_number);
 
   return payload;
 }
@@ -169,16 +180,108 @@ async function savePropertyRecord(supabase, requestPropertyId, villageId, proper
   const missingOptionalColumns =
     result.error?.message?.includes('maintenance_reason') ||
     result.error?.message?.includes('notes') ||
+    result.error?.message?.includes('village_code') ||
+    result.error?.message?.includes('phase_number') ||
     result.error?.message?.includes('schema cache');
 
   if (missingOptionalColumns) {
     const fallbackPayload = { ...propertyPayload };
     delete fallbackPayload.notes;
     delete fallbackPayload.maintenance_reason;
+    delete fallbackPayload.village_code;
+    delete fallbackPayload.phase_number;
     result = await runSave(fallbackPayload);
   }
 
   return result;
+}
+
+async function getVillageDetails(supabase, villageId) {
+  const { data: village, error } = await supabase
+    .from('villages')
+    .select('*')
+    .eq('id', villageId)
+    .single();
+
+  if (error || !village) throw error || new Error('Village was not found.');
+  return village;
+}
+
+async function assertNoDuplicateProperty(supabase, {
+  villageId,
+  propertyId,
+  propertyCode,
+  phaseNumber,
+  blockNumber,
+  lotNumber
+}) {
+  let codeQuery = supabase
+    .from('properties')
+    .select('id')
+    .eq('property_code', propertyCode)
+    .limit(1);
+
+  if (propertyId) codeQuery = codeQuery.neq('id', propertyId);
+  const { data: codeMatches, error: codeError } = await codeQuery;
+  if (codeError) throw codeError;
+  if (codeMatches?.length > 0) {
+    return 'Property code already exists. Please check the phase, block, and lot number.';
+  }
+
+  let lotQuery = supabase
+    .from('properties')
+    .select('id')
+    .eq('village_id', villageId)
+    .eq('phase_number', phaseNumber)
+    .eq('block_number', blockNumber)
+    .eq('lot_number', lotNumber)
+    .limit(1);
+
+  if (propertyId) lotQuery = lotQuery.neq('id', propertyId);
+  const { data: lotMatches, error: lotError } = await lotQuery;
+  if (lotError) throw lotError;
+  if (lotMatches?.length > 0) {
+    return 'This lot number already exists in the selected phase and block.';
+  }
+
+  return '';
+}
+
+export async function GET(request) {
+  const supabase = await createClient();
+  const { searchParams } = new URL(request.url);
+  const villageId = searchParams.get('villageId');
+  const phaseNumber = normalizeNumberPart(searchParams.get('phaseNumber') || '1');
+  const blockNumber = normalizeNumberPart(searchParams.get('blockNumber'));
+  const propertyId = searchParams.get('propertyId') || null;
+
+  if (!villageId || !blockNumber) {
+    return json(400, { error: 'Village and block number are required.' });
+  }
+
+  const authContext = await getAuthorizedContext(supabase, villageId);
+  if (authContext.error) return authContext.error;
+
+  try {
+    const village = await getVillageDetails(supabase, villageId);
+    const villageCode = normalizeVillageCode(village.village_code, village.name);
+    const lotNumber = await getNextLotNumber(supabase, {
+      villageId,
+      phaseNumber,
+      blockNumber,
+      excludePropertyId: propertyId
+    });
+
+    return json(200, {
+      villageCode,
+      phaseNumber,
+      blockNumber,
+      lotNumber,
+      propertyCode: generatePropertyCode({ villageCode, phaseNumber, blockNumber, lotNumber })
+    });
+  } catch (error) {
+    return json(400, { error: error.message || 'Next lot number could not be generated.' });
+  }
 }
 
 export async function POST(request) {
@@ -210,14 +313,58 @@ export async function POST(request) {
     return json(404, { error: 'Blueprint object was not found in this village.' });
   }
 
+  let village;
+  try {
+    village = await getVillageDetails(supabase, villageId);
+  } catch (error) {
+    return json(400, { error: error.message || 'Village details could not be loaded.' });
+  }
+
+  const requestPropertyId = propertyId || object.linked_property_id || null;
+  const villageCode = normalizeVillageCode(payload.village_code || village.village_code, village.name);
+  const phaseNumber = normalizeNumberPart(payload.phase_number || '1');
+  const blockNumber = normalizeNumberPart(payload.block_number);
+  let lotNumber = normalizeNumberPart(payload.lot_number);
+
+  if (!requestPropertyId && (!lotNumber || formData?.autoLotNumber !== false)) {
+    try {
+      lotNumber = await getNextLotNumber(supabase, { villageId, phaseNumber, blockNumber });
+    } catch (error) {
+      return json(400, { error: error.message || 'Next lot number could not be generated.' });
+    }
+  }
+
+  const propertyCode = generatePropertyCode({ villageCode, phaseNumber, blockNumber, lotNumber });
+  if (!propertyCode) {
+    return json(400, { error: 'Property code could not be generated from village, phase, block, and lot.' });
+  }
+
+  try {
+    const duplicateError = await assertNoDuplicateProperty(supabase, {
+      villageId,
+      propertyId: requestPropertyId,
+      propertyCode,
+      phaseNumber,
+      blockNumber,
+      lotNumber
+    });
+    if (duplicateError) return json(409, { error: duplicateError });
+  } catch (error) {
+    return json(400, { error: error.message || 'Duplicate property validation failed.' });
+  }
+
   const propertyPayload = {
     ...payload,
+    village_code: villageCode,
+    phase_number: phaseNumber,
+    block_number: blockNumber,
+    lot_number: lotNumber,
+    property_code: propertyCode,
     village_id: villageId,
     blueprint_object_id: blueprintObjectId,
     updated_at: new Date().toISOString()
   };
 
-  const requestPropertyId = propertyId || object.linked_property_id || null;
   const { data: savedProperty, error: saveError } = await savePropertyRecord(
     supabase,
     requestPropertyId,
