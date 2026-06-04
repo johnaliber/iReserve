@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Loader2, RefreshCw, Save, Trash2, Unlink, X } from 'lucide-react';
+import { AlertCircle, Loader2, RefreshCw, Save, Trash2, Unlink, UploadCloud, X } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 import { generatePropertyCode } from '@/lib/properties/numbering';
 
 const EMPTY_FORM = {
@@ -16,6 +17,9 @@ const EMPTY_FORM = {
   description: '',
   price: '',
   reservation_fee: '5000',
+  interest_rate: '0',
+  downpayment_percentage: '20',
+  default_loan_term_years: '15',
   lot_size: '',
   floor_area: '',
   bedrooms: '0',
@@ -59,6 +63,9 @@ function buildForm(property, blueprintObject) {
     description: property?.description || '',
     price: property?.price?.toString() || '',
     reservation_fee: property?.reservation_fee?.toString() || '5000',
+    interest_rate: property?.interest_rate?.toString() || '0',
+    downpayment_percentage: property?.downpayment_percentage?.toString() || '20',
+    default_loan_term_years: property?.default_loan_term_years?.toString() || '15',
     lot_size: property?.lot_size?.toString() || valueFromObjectData(objectData, ['lot_size', 'lotSize', 'area'], ''),
     floor_area: property?.floor_area?.toString() || '',
     bedrooms: property?.bedrooms?.toString() || '0',
@@ -87,7 +94,16 @@ function Field({ label, required, children }) {
 }
 
 const inputClass = 'w-full rounded-lg border border-[#dbe4ee] bg-white px-3 py-2.5 text-sm text-[#272727] shadow-sm outline-none transition placeholder:text-[#94a3b8] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15';
+const lockedInputClass = `${inputClass} cursor-not-allowed bg-[#f8fafc] text-[#64748b]`;
 const sectionClass = 'rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm';
+const acceptedImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
+
+function buildStorageFileName(fileName) {
+  return fileName
+    .replace(/[^a-z0-9._-]/gi, '-')
+    .replace(/-+/g, '-')
+    .toLowerCase();
+}
 
 export default function PropertyEditorDrawer({
   open,
@@ -99,12 +115,16 @@ export default function PropertyEditorDrawer({
   onSaved,
   onDeleted
 }) {
+  const supabase = createClient();
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [checkingLot, setCheckingLot] = useState(false);
   const [lotHelper, setLotHelper] = useState('');
   const [error, setError] = useState('');
+  const [presets, setPresets] = useState([]);
+  const [selectedPresetId, setSelectedPresetId] = useState('');
+  const [uploadingField, setUploadingField] = useState('');
 
   const isLinked = Boolean(property?.id);
   const title = isLinked ? 'Edit Property Details' : 'Create Property Details';
@@ -117,14 +137,35 @@ export default function PropertyEditorDrawer({
       setForm(buildForm(property, blueprintObject));
       setError('');
       setLotHelper('');
+      setSelectedPresetId('');
     }, 0);
 
     return () => clearTimeout(timer);
   }, [open, property, blueprintObject]);
 
+  useEffect(() => {
+    if (!open || !villageId) return undefined;
+
+    const timer = setTimeout(async () => {
+      const { data, error: presetsError } = await supabase
+        .from('property_type_presets')
+        .select('*')
+        .eq('village_id', villageId)
+        .eq('is_active', true)
+        .order('name', { ascending: true });
+
+      if (!presetsError) {
+        setPresets(data || []);
+      }
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [open, villageId, supabase]);
+
   const canSubmit = useMemo(() => {
     return Boolean(
       form.property_code &&
+      (isLinked || selectedPresetId) &&
       form.phase_number &&
       form.block_number &&
       form.lot_number &&
@@ -137,7 +178,7 @@ export default function PropertyEditorDrawer({
       form.sunlight_exposure &&
       (form.status !== 'under_maintenance' || form.maintenance_reason)
     );
-  }, [form]);
+  }, [form, isLinked, selectedPresetId]);
 
   const updateField = (field, value) => {
     setForm((current) => {
@@ -152,6 +193,73 @@ export default function PropertyEditorDrawer({
       }
       return next;
     });
+  };
+
+  const handleMediaUpload = async (field, file) => {
+    if (!file) return;
+
+    if (!acceptedImageTypes.includes(file.type)) {
+      setError('Please upload a JPG, PNG, or WebP image.');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Image upload limit is 10MB.');
+      return;
+    }
+
+    setUploadingField(field);
+    setError('');
+
+    try {
+      const ownerId = property?.id || blueprintObject?.id || 'new-property';
+      const safeName = buildStorageFileName(file.name);
+      const storagePath = `properties/${villageId || 'unassigned'}/${ownerId}/${Date.now()}-${safeName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('blueprint-assets')
+        .upload(storagePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from('blueprint-assets')
+        .getPublicUrl(storagePath);
+
+      updateField(field, data.publicUrl);
+    } catch (err) {
+      setError(err.message || 'Image could not be uploaded.');
+    } finally {
+      setUploadingField('');
+    }
+  };
+
+  const applyPreset = (presetId) => {
+    setSelectedPresetId(presetId);
+    const preset = presets.find((item) => item.id === presetId);
+    if (!preset) return;
+
+    setForm((current) => ({
+      ...current,
+      property_type: preset.property_type || current.property_type,
+      model_name: preset.model_name || preset.name || current.model_name,
+      description: preset.description || current.description,
+      price: preset.price?.toString() || current.price,
+      reservation_fee: preset.reservation_fee?.toString() || current.reservation_fee,
+      interest_rate: preset.interest_rate?.toString() || current.interest_rate || '0',
+      downpayment_percentage: preset.downpayment_percentage?.toString() || current.downpayment_percentage || '20',
+      default_loan_term_years: preset.default_loan_term_years?.toString() || current.default_loan_term_years || '15',
+      lot_size: preset.lot_size?.toString() || current.lot_size,
+      floor_area: preset.floor_area?.toString() || '',
+      bedrooms: preset.bedrooms?.toString() || '0',
+      bathrooms: preset.bathrooms?.toString() || '0',
+      parking_slots: preset.parking_slots?.toString() || '0',
+      flood_risk: preset.flood_risk || current.flood_risk,
+      sunlight_exposure: preset.sunlight_exposure || current.sunlight_exposure
+    }));
   };
 
   const refreshLotNumber = useCallback(async ({ force = true } = {}) => {
@@ -346,9 +454,22 @@ export default function PropertyEditorDrawer({
 
           <section className={sectionClass}>
             <h3 className="text-sm font-extrabold text-[#272727]">Basic</h3>
+            <p className="mt-1 text-xs font-semibold text-[#64748b]">
+              Configured model fields are managed from Lot / House Detail Configurations.
+            </p>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Configured Lot / House Type" required={!isLinked}>
+                <select className={inputClass} value={selectedPresetId} onChange={(e) => applyPreset(e.target.value)}>
+                  <option value="">Choose a saved configuration</option>
+                  {presets.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.name} - {preset.property_type?.replaceAll('_', ' ')}
+                    </option>
+                  ))}
+                </select>
+              </Field>
               <Field label="Property Type" required>
-                <select className={inputClass} value={form.property_type} onChange={(e) => updateField('property_type', e.target.value)}>
+                <select className={lockedInputClass} value={form.property_type} disabled>
                   <option value="lot">Lot</option>
                   <option value="house_and_lot">House and Lot</option>
                   <option value="townhouse">Townhouse</option>
@@ -360,12 +481,12 @@ export default function PropertyEditorDrawer({
                 <input className={inputClass} value={form.street_name} onChange={(e) => updateField('street_name', e.target.value)} />
               </Field>
               <Field label="Model Name">
-                <input className={inputClass} value={form.model_name} onChange={(e) => updateField('model_name', e.target.value)} />
+                <input className={lockedInputClass} value={form.model_name} readOnly />
               </Field>
             </div>
             <div className="mt-4">
             <Field label="Description">
-              <textarea className={`${inputClass} min-h-24`} value={form.description} onChange={(e) => updateField('description', e.target.value)} />
+              <textarea className={`${lockedInputClass} min-h-24`} value={form.description} readOnly />
             </Field>
             </div>
           </section>
@@ -374,10 +495,19 @@ export default function PropertyEditorDrawer({
             <h3 className="text-sm font-extrabold text-[#272727]">Pricing</h3>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Price" required>
-                <input type="number" min="0" className={inputClass} value={form.price} onChange={(e) => updateField('price', e.target.value)} />
+                <input type="number" min="0" className={lockedInputClass} value={form.price} readOnly />
               </Field>
               <Field label="Reservation Fee" required>
-                <input type="number" min="0" className={inputClass} value={form.reservation_fee} onChange={(e) => updateField('reservation_fee', e.target.value)} />
+                <input type="number" min="0" className={lockedInputClass} value={form.reservation_fee} readOnly />
+              </Field>
+              <Field label="Interest Rate (%)">
+                <input type="number" min="0" step="0.01" className={lockedInputClass} value={form.interest_rate} readOnly />
+              </Field>
+              <Field label="Downpayment (%)">
+                <input type="number" min="0" max="100" step="0.01" className={lockedInputClass} value={form.downpayment_percentage} readOnly />
+              </Field>
+              <Field label="Default Loan Term (years)">
+                <input type="number" min="1" className={lockedInputClass} value={form.default_loan_term_years} readOnly />
               </Field>
             </div>
           </section>
@@ -386,19 +516,19 @@ export default function PropertyEditorDrawer({
             <h3 className="text-sm font-extrabold text-[#272727]">Lot Details</h3>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Lot Size" required>
-                <input type="number" min="0" className={inputClass} value={form.lot_size} onChange={(e) => updateField('lot_size', e.target.value)} />
+                <input type="number" min="0" className={lockedInputClass} value={form.lot_size} readOnly />
               </Field>
               <Field label="Floor Area">
-                <input type="number" min="0" className={inputClass} value={form.floor_area} onChange={(e) => updateField('floor_area', e.target.value)} />
+                <input type="number" min="0" className={lockedInputClass} value={form.floor_area} readOnly />
               </Field>
               <Field label="Bedrooms">
-                <input type="number" min="0" className={inputClass} value={form.bedrooms} onChange={(e) => updateField('bedrooms', e.target.value)} />
+                <input type="number" min="0" className={lockedInputClass} value={form.bedrooms} readOnly />
               </Field>
               <Field label="Bathrooms">
-                <input type="number" min="0" className={inputClass} value={form.bathrooms} onChange={(e) => updateField('bathrooms', e.target.value)} />
+                <input type="number" min="0" className={lockedInputClass} value={form.bathrooms} readOnly />
               </Field>
               <Field label="Parking Slots">
-                <input type="number" min="0" className={inputClass} value={form.parking_slots} onChange={(e) => updateField('parking_slots', e.target.value)} />
+                <input type="number" min="0" className={lockedInputClass} value={form.parking_slots} readOnly />
               </Field>
               <Field label="Orientation">
                 <input className={inputClass} value={form.orientation} onChange={(e) => updateField('orientation', e.target.value)} />
@@ -419,14 +549,14 @@ export default function PropertyEditorDrawer({
                 </select>
               </Field>
               <Field label="Flood Risk" required>
-                <select className={inputClass} value={form.flood_risk} onChange={(e) => updateField('flood_risk', e.target.value)}>
+                <select className={lockedInputClass} value={form.flood_risk} disabled>
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
                   <option value="high">High</option>
                 </select>
               </Field>
               <Field label="Sunlight Exposure" required>
-                <select className={inputClass} value={form.sunlight_exposure} onChange={(e) => updateField('sunlight_exposure', e.target.value)}>
+                <select className={lockedInputClass} value={form.sunlight_exposure} disabled>
                   <option value="morning">Morning</option>
                   <option value="afternoon">Afternoon</option>
                   <option value="balanced">Balanced</option>
@@ -444,12 +574,72 @@ export default function PropertyEditorDrawer({
           <section className={sectionClass}>
             <h3 className="text-sm font-extrabold text-[#272727]">Images & Media</h3>
             <div className="mt-4 space-y-4">
-            <Field label="Thumbnail URL">
-              <input className={inputClass} value={form.thumbnail_url} onChange={(e) => updateField('thumbnail_url', e.target.value)} />
-            </Field>
-            <Field label="Floor Plan URL">
-              <input className={inputClass} value={form.floor_plan_url} onChange={(e) => updateField('floor_plan_url', e.target.value)} />
-            </Field>
+              <Field label="Thumbnail Image">
+                <div className="rounded-xl border border-dashed border-[#cbd5e1] bg-[#f8fafc] p-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-[#272727]">
+                        {form.thumbnail_url ? 'Thumbnail image uploaded' : 'Upload a property thumbnail'}
+                      </p>
+                      <p className="mt-1 text-xs text-[#64748b]">Accepted: JPG, PNG, or WebP up to 10MB.</p>
+                    </div>
+                    <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-extrabold text-white shadow transition hover:bg-emerald-500">
+                      {uploadingField === 'thumbnail_url' ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                      {uploadingField === 'thumbnail_url' ? 'Uploading...' : 'Upload Image'}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        disabled={uploadingField === 'thumbnail_url'}
+                        onChange={(e) => handleMediaUpload('thumbnail_url', e.target.files?.[0])}
+                      />
+                    </label>
+                  </div>
+                  {form.thumbnail_url && (
+                    <a
+                      href={form.thumbnail_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-3 block truncate rounded-lg border border-[#dbe4ee] bg-white px-3 py-2 text-xs font-semibold text-emerald-700 hover:text-emerald-600"
+                    >
+                      View uploaded thumbnail
+                    </a>
+                  )}
+                </div>
+              </Field>
+              <Field label="Floor Plan Image">
+                <div className="rounded-xl border border-dashed border-[#cbd5e1] bg-[#f8fafc] p-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-[#272727]">
+                        {form.floor_plan_url ? 'Floor plan image uploaded' : 'Upload a floor plan image'}
+                      </p>
+                      <p className="mt-1 text-xs text-[#64748b]">Accepted: JPG, PNG, or WebP up to 10MB.</p>
+                    </div>
+                    <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-extrabold text-white shadow transition hover:bg-emerald-500">
+                      {uploadingField === 'floor_plan_url' ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                      {uploadingField === 'floor_plan_url' ? 'Uploading...' : 'Upload Image'}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        disabled={uploadingField === 'floor_plan_url'}
+                        onChange={(e) => handleMediaUpload('floor_plan_url', e.target.files?.[0])}
+                      />
+                    </label>
+                  </div>
+                  {form.floor_plan_url && (
+                    <a
+                      href={form.floor_plan_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-3 block truncate rounded-lg border border-[#dbe4ee] bg-white px-3 py-2 text-xs font-semibold text-emerald-700 hover:text-emerald-600"
+                    >
+                      View uploaded floor plan
+                    </a>
+                  )}
+                </div>
+              </Field>
             </div>
           </section>
 

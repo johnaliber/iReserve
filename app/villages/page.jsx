@@ -18,6 +18,46 @@ export default async function VillagesPage() {
       .eq('status', 'active')
       .order('name');
     villages = data || [];
+
+    if (villages.length > 0) {
+      const { data: properties } = await supabase
+        .from('properties')
+        .select('village_id, status, price')
+        .in('village_id', villages.map((village) => village.id));
+
+      const statsByVillage = new Map();
+      for (const property of properties || []) {
+        const stats = statsByVillage.get(property.village_id) || {
+          properties_count: 0,
+          available_count: 0,
+          starting_price: null
+        };
+        stats.properties_count += 1;
+        if (property.status === 'available') stats.available_count += 1;
+        const price = Number(property.price || 0);
+        if (price > 0 && (stats.starting_price === null || price < stats.starting_price)) {
+          stats.starting_price = price;
+        }
+        statsByVillage.set(property.village_id, stats);
+      }
+
+      villages = villages.map((village) => {
+        const stats = statsByVillage.get(village.id);
+        if (!stats) {
+          return {
+            ...village,
+            properties_count: 0,
+            available_count: 0
+          };
+        }
+        return {
+          ...village,
+          properties_count: stats.properties_count,
+          available_count: stats.available_count,
+          starting_price: stats.starting_price || village.starting_price
+        };
+      });
+    }
   } catch (error) {
     console.error('Error fetching villages list:', error);
   }

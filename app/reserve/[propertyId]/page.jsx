@@ -62,6 +62,8 @@ export default function ReservePropertyPage() {
 
       if (!error && data) {
         setProperty(data);
+        setDownpaymentPercentage(Number(data.downpayment_percentage || 20));
+        setInstallmentTermMonths(Number(data.default_loan_term_years || 2) * 12);
         
         // Pre-fill user profile fields if logged in
         const { data: { user } } = await supabase.auth.getUser();
@@ -159,7 +161,8 @@ export default function ReservePropertyPage() {
         paymentType,
         downpaymentAmount,
         downpaymentPercentage,
-        installmentTermMonths
+        installmentTermMonths,
+        interestRate: property?.interest_rate || 0
       });
       const submittedAmount = Number(paymentAmount || planPreview.initialAmountDue);
       if (submittedAmount > planPreview.initialAmountDue) {
@@ -367,6 +370,10 @@ export default function ReservePropertyPage() {
                       <option value={12}>12 months</option>
                       <option value={24}>24 months</option>
                       <option value={36}>36 months</option>
+                      <option value={60}>5 years (60 months)</option>
+                      <option value={120}>10 years (120 months)</option>
+                      <option value={180}>15 years (180 months)</option>
+                      <option value={240}>20 years (240 months)</option>
                     </select>
                   </div>
                 )}
@@ -378,6 +385,7 @@ export default function ReservePropertyPage() {
                   downpaymentAmount={downpaymentAmount}
                   downpaymentPercentage={downpaymentPercentage}
                   installmentTermMonths={installmentTermMonths}
+                  interestRate={property?.interest_rate || 0}
                 />
 
                 <h3 className="text-sm font-bold text-slate-200 mb-3 flex items-center gap-1.5">
@@ -436,7 +444,8 @@ export default function ReservePropertyPage() {
                       paymentType,
                       downpaymentAmount,
                       downpaymentPercentage,
-                      installmentTermMonths
+                      installmentTermMonths,
+                      interestRate: property?.interest_rate || 0
                     }).initialAmountDue}
                     value={paymentAmount}
                     onChange={(e) => setPaymentAmount(e.target.value)}
@@ -446,7 +455,8 @@ export default function ReservePropertyPage() {
                       paymentType,
                       downpaymentAmount,
                       downpaymentPercentage,
-                      installmentTermMonths
+                      installmentTermMonths,
+                      interestRate: property?.interest_rate || 0
                     }).initialAmountDue)}`}
                     className="w-full bg-white border border-slate-800 rounded-xl py-2.5 px-4 text-[#272727] outline-none text-sm"
                   />

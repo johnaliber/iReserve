@@ -80,9 +80,10 @@ export default async function VillageLandingPage({ params }) {
   };
 
   const selectedVillage = village || mockVillages[slug] || mockVillages['emerald-ridge'];
+  const isRealVillage = Boolean(village);
   
-  const totalPropsCount = properties.length > 0 ? properties.length : 24;
-  const availablePropsCount = properties.length > 0 ? properties.filter(p => p.status === 'available').length : 12;
+  const totalPropsCount = isRealVillage ? properties.length : 24;
+  const availablePropsCount = isRealVillage ? properties.filter(p => p.status === 'available').length : 12;
 
   // Render icons for specific amenities
   const getAmenityIcon = (name) => {

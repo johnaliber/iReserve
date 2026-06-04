@@ -103,6 +103,9 @@ CREATE TABLE public.properties (
     description TEXT,
     price NUMERIC(15, 2) NOT NULL,
     reservation_fee NUMERIC(15, 2) NOT NULL DEFAULT 5000.00,
+    interest_rate NUMERIC(5, 2) DEFAULT 0,
+    downpayment_percentage NUMERIC(5, 2) DEFAULT 20,
+    default_loan_term_years INT DEFAULT 15,
     lot_size NUMERIC(10, 2) NOT NULL,
     floor_area NUMERIC(10, 2),
     bedrooms INT DEFAULT 0,
@@ -120,6 +123,32 @@ CREATE TABLE public.properties (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     UNIQUE(property_code),
     UNIQUE(village_id, phase_number, block_number, lot_number)
+);
+
+CREATE TABLE public.property_type_presets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    village_id UUID NOT NULL REFERENCES public.villages(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    property_type TEXT NOT NULL CHECK (property_type IN ('lot', 'house_and_lot', 'townhouse', 'duplex', 'commercial_lot')),
+    model_name TEXT,
+    description TEXT,
+    price NUMERIC(15, 2) NOT NULL DEFAULT 0,
+    reservation_fee NUMERIC(15, 2) NOT NULL DEFAULT 5000,
+    interest_rate NUMERIC(5, 2) NOT NULL DEFAULT 0,
+    downpayment_percentage NUMERIC(5, 2) NOT NULL DEFAULT 20,
+    default_loan_term_years INT NOT NULL DEFAULT 15,
+    lot_size NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    floor_area NUMERIC(10, 2),
+    bedrooms INT DEFAULT 0,
+    bathrooms INT DEFAULT 0,
+    parking_slots INT DEFAULT 0,
+    orientation TEXT,
+    flood_risk TEXT NOT NULL DEFAULT 'low' CHECK (flood_risk IN ('low', 'medium', 'high')),
+    sunlight_exposure TEXT NOT NULL DEFAULT 'balanced' CHECK (sunlight_exposure IN ('morning', 'afternoon', 'balanced', 'limited')),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    UNIQUE(village_id, name)
 );
 
 -- Add foreign key constraint to blueprint_objects for linked_property_id
@@ -362,6 +391,7 @@ ALTER TABLE public.user_villages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.blueprints ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.blueprint_objects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.properties ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.property_type_presets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.property_images ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reservations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payment_plans ENABLE ROW LEVEL SECURITY;
@@ -471,10 +501,15 @@ CREATE POLICY blueprint_objects_read_admin ON public.blueprint_objects FOR SELEC
 CREATE POLICY properties_super_admin ON public.properties FOR ALL TO authenticated USING (public.is_super_admin());
 CREATE POLICY properties_admin_all ON public.properties FOR ALL TO authenticated USING (public.has_village_role(village_id, 'village_admin'));
 CREATE POLICY properties_customer_reserve_update ON public.properties FOR UPDATE TO authenticated
-    USING (status = 'available')
-    WITH CHECK (status = 'reserved');
+USING (status = 'available')
+WITH CHECK (status = 'reserved');
 CREATE POLICY properties_read_public ON public.properties FOR SELECT TO public USING (status != 'hidden');
 CREATE POLICY properties_read_admin ON public.properties FOR SELECT TO authenticated USING (public.has_village_access(village_id));
+
+-- --- property_type_presets POLICIES ---
+CREATE POLICY property_type_presets_super_admin ON public.property_type_presets FOR ALL TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
+CREATE POLICY property_type_presets_admin_all ON public.property_type_presets FOR ALL TO authenticated USING (public.has_village_role(village_id, 'village_admin')) WITH CHECK (public.has_village_role(village_id, 'village_admin'));
+CREATE POLICY property_type_presets_read_staff ON public.property_type_presets FOR SELECT TO authenticated USING (public.has_village_access(village_id));
 
 -- --- property_images POLICIES ---
 CREATE POLICY property_images_super_admin ON public.property_images FOR ALL TO authenticated USING (public.is_super_admin());

@@ -59,7 +59,11 @@ function initials(name = '') {
     .toUpperCase() || 'U';
 }
 
-export default function SuperAdminAccountsPage() {
+export default function SuperAdminAccountsPage({
+  defaultRoleFilter = '',
+  pageTitle = 'Manage Accounts',
+  pageDescription = 'View, edit, and manage all user accounts across the entire iReserve system. Filter by role and village assignment.'
+}) {
   const supabase = createClient();
 
   const [loading, setLoading] = useState(true);
@@ -68,7 +72,7 @@ export default function SuperAdminAccountsPage() {
   const [userVillages, setUserVillages] = useState([]);
 
   // Filters
-  const [roleFilter, setRoleFilter] = useState('');
+  const [roleFilter, setRoleFilter] = useState(defaultRoleFilter);
   const [villageFilter, setVillageFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -237,9 +241,9 @@ export default function SuperAdminAccountsPage() {
         <div className="flex flex-col gap-4 border-b border-[#e2e8f0] pb-5 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-600">System Administration</p>
-            <h1 className="mt-2 text-3xl font-extrabold text-[#272727]">Manage Accounts</h1>
+            <h1 className="mt-2 text-3xl font-extrabold text-[#272727]">{pageTitle}</h1>
             <p className="mt-1 max-w-2xl text-sm text-[#64748b]">
-              View, edit, and manage all user accounts across the entire iReserve system. Filter by role and village assignment.
+              {pageDescription}
             </p>
           </div>
         </div>

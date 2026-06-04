@@ -77,7 +77,8 @@ export default function Navbar({ toggleSidebar, isSidebarOpen }) {
   };
 
   return (
-    <header className="sticky top-0 z-40 flex w-full items-center justify-between border-b border-[#e2e8f0] bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
+    <>
+    <header className="fixed left-0 top-0 z-40 flex h-[61px] w-full items-center justify-between border-b border-[#e2e8f0] bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
       <div className="flex items-center gap-3">
         {toggleSidebar && (
           <button
@@ -204,5 +205,7 @@ export default function Navbar({ toggleSidebar, isSidebarOpen }) {
         )}
       </div>
     </header>
+    <div className="h-[61px] flex-shrink-0" aria-hidden="true" />
+    </>
   );
 }

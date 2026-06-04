@@ -45,10 +45,18 @@ export default function PropertyDetailModal({ property, isOpen, onClose }) {
   const [downpaymentPercent, setDownpaymentPercent] = useState(20); // 20% default
   const [loanTermYears, setLoanTermYears] = useState(15); // 15 years default
 
-  const interestRatePerYear = 7.5; // 7.5% annual rate
+  useEffect(() => {
+    if (!property) return undefined;
+    const timer = setTimeout(() => {
+      setDownpaymentPercent(Number(property.downpayment_percentage || 20));
+      setLoanTermYears(Number(property.default_loan_term_years || 15));
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [property]);
 
   if (!isOpen || !property) return null;
 
+  const interestRatePerYear = Number(property.interest_rate ?? 0);
   const principalPrice = property.price || 4500000;
   const downpaymentAmountVal = principalPrice * (downpaymentPercent / 100);
   const loanAmountVal = principalPrice - downpaymentAmountVal;
@@ -78,6 +86,8 @@ export default function PropertyDetailModal({ property, isOpen, onClose }) {
     description,
     price = 4500000,
     reservation_fee = 5000,
+    interest_rate = 0,
+    default_loan_term_years = 15,
     lot_size = 120,
     floor_area = 85,
     bedrooms = 3,
@@ -90,8 +100,8 @@ export default function PropertyDetailModal({ property, isOpen, onClose }) {
     thumbnail_url
   } = property;
 
+  const displayInterestRate = Number(interest_rate || interestRatePerYear || 0);
   const downpaymentAmount = price * (downpaymentPercent / 100);
-  const loanAmount = price - downpaymentAmount;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm transition-opacity">
@@ -218,9 +228,9 @@ export default function PropertyDetailModal({ property, isOpen, onClose }) {
                   type="range"
                   min="10"
                   max="50"
-                  step="5"
+                  step="1"
                   value={downpaymentPercent}
-                  onChange={(e) => setDownpaymentPercent(parseInt(e.target.value))}
+                  onChange={(e) => setDownpaymentPercent(Number(e.target.value))}
                   className="w-full h-1 bg-slate-900 rounded-lg appearance-none cursor-pointer outline-none"
                 />
               </div>
@@ -240,6 +250,9 @@ export default function PropertyDetailModal({ property, isOpen, onClose }) {
                     <option value={10}>10 Years (120 mos)</option>
                     <option value={15}>15 Years (180 mos)</option>
                     <option value={20}>20 Years (240 mos)</option>
+                    {![5, 10, 15, 20].includes(Number(default_loan_term_years)) && (
+                      <option value={Number(default_loan_term_years)}>{default_loan_term_years} Years ({Number(default_loan_term_years) * 12} mos)</option>
+                    )}
                   </select>
                 </div>
                 <div>
@@ -247,7 +260,7 @@ export default function PropertyDetailModal({ property, isOpen, onClose }) {
                     Annual Interest Rate
                   </label>
                   <div className="w-full bg-slate-950/40 border border-slate-900 text-slate-500 rounded-lg p-2 text-xs font-semibold">
-                    7.5% per annum
+                    {displayInterestRate}% per annum
                   </div>
                 </div>
               </div>
@@ -256,7 +269,7 @@ export default function PropertyDetailModal({ property, isOpen, onClose }) {
               <div className="pt-3 border-t border-slate-900/60 flex items-center justify-between">
                 <div>
                   <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Estimated Monthly Amortization</span>
-                  <span className="text-[9px] text-slate-500 italic block mt-0.5">Calculated at 7.5% fixed interest</span>
+                  <span className="text-[9px] text-slate-500 italic block mt-0.5">Calculated at {displayInterestRate}% fixed interest</span>
                 </div>
                 <span className="text-xl font-black text-emerald-400">
                   ₱{Math.round(monthlyAmortization).toLocaleString()}/mo

@@ -9,7 +9,8 @@ export default function PaymentCalculator({
   paymentType,
   downpaymentAmount,
   downpaymentPercentage,
-  installmentTermMonths
+  installmentTermMonths,
+  interestRate = 0
 }) {
   const plan = calculatePaymentPlan({
     propertyPrice,
@@ -17,7 +18,8 @@ export default function PaymentCalculator({
     paymentType,
     downpaymentAmount,
     downpaymentPercentage,
-    installmentTermMonths
+    installmentTermMonths,
+    interestRate
   });
 
   return (
@@ -29,6 +31,7 @@ export default function PaymentCalculator({
         <div><dt className="text-[#64748b]">Downpayment</dt><dd className="font-extrabold text-[#272727]">{formatPeso(plan.downpaymentAmount)}</dd></div>
         <div><dt className="text-[#64748b]">Initial Amount Due</dt><dd className="font-extrabold text-emerald-600">{formatPeso(plan.initialAmountDue)}</dd></div>
         {plan.monthlyPayment && <div><dt className="text-[#64748b]">Monthly Payment</dt><dd className="font-extrabold text-[#272727]">{formatPeso(plan.monthlyPayment)}</dd></div>}
+        {plan.paymentType === 'installment' && <div><dt className="text-[#64748b]">Interest Rate</dt><dd className="font-extrabold text-[#272727]">{plan.interestRate}%</dd></div>}
         {plan.installmentTermMonths && <div><dt className="text-[#64748b]">Installment Term</dt><dd className="font-extrabold text-[#272727]">{plan.installmentTermMonths} months</dd></div>}
       </dl>
     </div>

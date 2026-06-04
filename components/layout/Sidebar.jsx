@@ -100,6 +100,7 @@ export default function Sidebar({ isOpen, isCollapsed = false, onClose }) {
   const superAdminAccountLinks = [
     { name: 'Customer', href: '/super-admin/accounts/customers', icon: User },
     { name: 'Admin', href: '/super-admin/accounts/admins', icon: Building },
+    { name: 'Architect', href: '/super-admin/accounts/architects', icon: PencilRuler },
     { name: 'Accounting', href: '/super-admin/accounts/accounting', icon: CreditCard },
     { name: 'Superadmin', href: '/super-admin/accounts/superadmin', icon: Shield }
   ];

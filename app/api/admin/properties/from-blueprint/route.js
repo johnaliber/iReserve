@@ -20,8 +20,8 @@ const REQUIRED_FIELDS = [
   'sunlight_exposure'
 ];
 
-const NUMERIC_FIELDS = new Set(['price', 'reservation_fee', 'lot_size', 'floor_area']);
-const INTEGER_FIELDS = new Set(['bedrooms', 'bathrooms', 'parking_slots']);
+const NUMERIC_FIELDS = new Set(['price', 'reservation_fee', 'interest_rate', 'downpayment_percentage', 'lot_size', 'floor_area']);
+const INTEGER_FIELDS = new Set(['bedrooms', 'bathrooms', 'parking_slots', 'default_loan_term_years']);
 const PROPERTY_FIELDS = [
   'property_code',
   'village_code',
@@ -34,6 +34,9 @@ const PROPERTY_FIELDS = [
   'description',
   'price',
   'reservation_fee',
+  'interest_rate',
+  'downpayment_percentage',
+  'default_loan_term_years',
   'lot_size',
   'floor_area',
   'bedrooms',
@@ -180,6 +183,9 @@ async function savePropertyRecord(supabase, requestPropertyId, villageId, proper
   const missingOptionalColumns =
     result.error?.message?.includes('maintenance_reason') ||
     result.error?.message?.includes('notes') ||
+    result.error?.message?.includes('interest_rate') ||
+    result.error?.message?.includes('downpayment_percentage') ||
+    result.error?.message?.includes('default_loan_term_years') ||
     result.error?.message?.includes('village_code') ||
     result.error?.message?.includes('phase_number') ||
     result.error?.message?.includes('schema cache');
@@ -188,6 +194,9 @@ async function savePropertyRecord(supabase, requestPropertyId, villageId, proper
     const fallbackPayload = { ...propertyPayload };
     delete fallbackPayload.notes;
     delete fallbackPayload.maintenance_reason;
+    delete fallbackPayload.interest_rate;
+    delete fallbackPayload.downpayment_percentage;
+    delete fallbackPayload.default_loan_term_years;
     delete fallbackPayload.village_code;
     delete fallbackPayload.phase_number;
     result = await runSave(fallbackPayload);

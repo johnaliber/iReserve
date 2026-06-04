@@ -1,5 +1,11 @@
-import AdminPlaceholderPage from '@/components/admin/AdminPlaceholderPage';
+import SuperAdminAccountsPage from '../page';
 
 export default function ArchitectAccountsPage() {
-  return <AdminPlaceholderPage title="Architect Accounts" description="Manage blueprint canvas editor access and village design assignments." />;
+  return (
+    <SuperAdminAccountsPage
+      defaultRoleFilter="architect"
+      pageTitle="Architect Accounts"
+      pageDescription="Manage map canvas editor access and village design assignments for architect users."
+    />
+  );
 }
