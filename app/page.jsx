@@ -1,194 +1,169 @@
-import React from 'react';
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentUser } from '@/lib/auth/getCurrentUser';
-import VillageCard from '@/components/public/VillageCard';
 import Navbar from '@/components/layout/Navbar';
-import { Map, ShieldAlert, Sparkles, Navigation, Layers, Compass, HelpCircle, ArrowLeft } from 'lucide-react';
+import VillageCarousel from '@/components/public/VillageCarousel';
 import Link from 'next/link';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Calendar,
+  CheckCircle2,
+  CreditCard,
+  Home,
+  Map,
+  MousePointerClick,
+  ShieldCheck
+} from 'lucide-react';
 
-// Enable dynamic rendering
 export const revalidate = 0;
 
 export default async function HomePage() {
   let villages = [];
-  let error = null;
-
   try {
     const supabase = await createClient();
-    const { data, error: dbError } = await supabase
-      .from('villages')
-      .select('*')
-      .eq('status', 'active')
-      .order('created_at', { ascending: false });
-
-    if (dbError) throw dbError;
+    const { data } = await supabase.from('villages').select('*').eq('status', 'active').order('created_at', { ascending: false });
     villages = data || [];
-  } catch (err) {
-    console.error('Error fetching villages on homepage:', err);
-    error = err;
+    if (villages.length) {
+      const { data: properties } = await supabase
+        .from('properties')
+        .select('village_id, status, price')
+        .in('village_id', villages.map((village) => village.id));
+      const stats = new globalThis.Map();
+      for (const property of properties || []) {
+        const current = stats.get(property.village_id) || { available_count: 0, starting_price: null };
+        if (property.status === 'available') current.available_count += 1;
+        const price = Number(property.price || 0);
+        if (price > 0 && (!current.starting_price || price < current.starting_price)) current.starting_price = price;
+        stats.set(property.village_id, current);
+      }
+      villages = villages.map((village) => ({ ...village, ...(stats.get(village.id) || {} ) }));
+    }
+  } catch (error) {
+    console.error('Error fetching villages on homepage:', error);
   }
 
-  // Check if current user is an admin for the back button
-  let adminDashHref = null;
+  let accountHref = null;
   try {
-    const currentUser = await getCurrentUser();
-    const role = currentUser?.profile?.role;
-    if (role === 'super_admin') adminDashHref = '/super-admin/dashboard';
-    else if (role === 'village_admin') adminDashHref = '/village-admin/dashboard';
-  } catch (e) {
-    // Not logged in or error — no back button
+    const role = (await getCurrentUser())?.profile?.role;
+    accountHref = {
+      customer: '/customer/dashboard',
+      super_admin: '/super-admin/dashboard',
+      village_admin: '/village-admin/dashboard',
+      accounting: '/accounting/dashboard',
+      architect: '/architect/dashboard'
+    }[role] || null;
+  } catch {
+    accountHref = null;
   }
-  
-  const displayedVillages = villages.length > 0 ? villages : mockVillages;
+
+  const displayedVillages = villages.length ? villages : [{
+    id: 'sample',
+    name: 'Sample Village',
+    slug: 'emerald-ridge',
+    description: 'A comfortable community with secure roads, shared amenities, and available residential lots.',
+    city: 'Tagaytay',
+    province: 'Cavite',
+    starting_price: 4500000,
+    available_count: 12,
+    hero_image_url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=900&q=80'
+  }];
+
+  const steps = [
+    ['1', 'Choose a village', 'Compare communities, locations, and starting prices.'],
+    ['2', 'Click a lot or house', 'Green lots are available. Select one to see the details.'],
+    ['3', 'Submit reservation details', 'Fill in your information and upload a clear receipt.'],
+    ['4', 'Track your reservation online', 'Check payments, documents, and updates from your account.']
+  ];
+
+  const benefits = [
+    [Map, 'Interactive map', 'See where each available lot is located.'],
+    [MousePointerClick, 'Easy reservation', 'Follow simple steps with clear instructions.'],
+    [CreditCard, 'Payment tracking', 'See the amount paid and remaining balance.'],
+    [Calendar, 'Site viewing schedule', 'Request a convenient date and time online.']
+  ];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col relative overflow-hidden">
-      {/* Decorative gradient glowing spheres */}
-      <div className="absolute top-[-20%] right-[-10%] w-[1000px] h-[1000px] rounded-full bg-emerald-950/10 blur-[180px] pointer-events-none animate-pulse-slow" />
-      <div className="absolute bottom-[-10%] left-[-10%] w-[800px] h-[800px] rounded-full bg-teal-950/10 blur-[150px] pointer-events-none" />
-
-      {/* Global navbar header */}
+    <div className="min-h-screen bg-[#f8fafc] text-[#272727]">
       <Navbar />
-
-      {/* Back to Dashboard button for logged-in admins */}
-      {adminDashHref && (
-        <div className="relative z-20 px-4 md:px-8 max-w-7xl mx-auto w-full pt-4">
-          <Link
-            href={adminDashHref}
-            className="inline-flex items-center gap-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-emerald-500/30 hover:bg-slate-800/80 text-slate-300 hover:text-emerald-400 font-semibold text-xs px-4 py-2.5 transition duration-200 shadow-lg"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Dashboard
+      {accountHref && (
+        <div className="mx-auto w-full max-w-7xl px-4 pt-4 md:px-8">
+          <Link href={accountHref} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#dbe4ee] bg-white px-4 text-xs font-bold text-[#475569] shadow-sm">
+            <ArrowLeft className="h-4 w-4" /> Back to Account
           </Link>
         </div>
       )}
 
-      {/* 1. Hero Section */}
-      <section className="relative pt-20 pb-16 px-4 md:px-8 max-w-7xl mx-auto text-center z-10">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold mb-6 select-none shadow">
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Next-Generation Subdivision Reservations</span>
-        </div>
-        
-        <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight mb-6 max-w-4xl mx-auto leading-tight">
-          Don&apos;t just browse cards.{' '}
-          <span className="bg-gradient-to-r from-emerald-400 via-teal-400 to-emerald-500 bg-clip-text text-transparent">
-            Walk the subdivision map.
-          </span>
-        </h1>
-        
-        <p className="text-slate-400 text-base md:text-lg max-w-2xl mx-auto leading-relaxed mb-8">
-          iReserve is an interactive, blueprint-driven reservation system. Open a village subdivision map, toggle sunlight exposure, flood risks, and amenities, click a lot, and secure your reservation in 48 hours.
-        </p>
-
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <Link
-            href="#explore-villages"
-            className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-bold rounded-xl shadow-lg shadow-emerald-500/15 transition duration-200 transform hover:scale-[1.02] cursor-pointer"
-          >
-            Explore Interactive Villages
-          </Link>
-          <Link
-            href="/auth/register"
-            className="w-full sm:w-auto px-8 py-3.5 bg-slate-900 border border-slate-800 hover:border-slate-700 hover:bg-slate-800/40 text-slate-200 font-semibold rounded-xl transition duration-200 cursor-pointer"
-          >
-            Create an Account
-          </Link>
-        </div>
-
-        {/* Dynamic Quick Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-16 p-6 rounded-2xl glass-card border border-slate-900/80">
+      <main>
+        <section className="mx-auto grid max-w-7xl items-center gap-10 px-4 py-16 md:px-8 lg:grid-cols-[1.05fr_.95fr] lg:py-24">
           <div>
-            <span className="block text-3xl font-extrabold text-white">100%</span>
-            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider mt-1 block">Vector Map Editor</span>
-          </div>
-          <div className="border-l border-slate-800/80">
-            <span className="block text-3xl font-extrabold text-white">48hr</span>
-            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider mt-1 block">Unpaid Expiration</span>
-          </div>
-          <div className="border-l border-slate-800/80">
-            <span className="block text-3xl font-extrabold text-white">GCash/Maya</span>
-            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider mt-1 block">Manual Receipt uploads</span>
-          </div>
-          <div className="border-l border-slate-800/80">
-            <span className="block text-3xl font-extrabold text-white">Realtime</span>
-            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider mt-1 block">Role Dashboards</span>
-          </div>
-        </div>
-      </section>
-
-      {/* 2. Interactive Features Highlights */}
-      <section className="py-16 px-4 md:px-8 border-y border-slate-900 bg-slate-900/20 relative z-10">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-white mb-3">Engineered for Transparency</h2>
-            <p className="text-slate-400 text-sm max-w-xl mx-auto">
-              Our vector map editor allows architects to sketch subdivision paths. You see exactly what you buy.
+            <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-extrabold text-emerald-700">
+              <ShieldCheck className="h-4 w-4" /> Simple and secure online reservations
+            </span>
+            <h1 className="mt-6 max-w-3xl text-4xl font-extrabold leading-tight tracking-tight md:text-6xl">
+              Reserve your future home with an <span className="text-emerald-600">interactive village map.</span>
+            </h1>
+            <p className="mt-5 max-w-2xl text-base leading-7 text-[#64748b] md:text-lg">
+              Browse villages, click available lots, view details, and reserve online.
             </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="glass-card p-6 rounded-xl border border-slate-800/80">
-              <div className="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-4 shadow">
-                <Navigation className="w-5 h-5" />
-              </div>
-              <h3 className="text-lg font-bold text-slate-200 mb-2">Automated Snapping Roads</h3>
-              <p className="text-slate-400 text-xs leading-relaxed">
-                Architects can design streets using vector tools that auto-align and merge visually at intersections.
-              </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <Link href="#featured-villages" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 text-sm font-extrabold text-white shadow-lg shadow-emerald-900/10 hover:bg-emerald-500">
+                Browse Villages <ArrowRight className="h-4 w-4" />
+              </Link>
             </div>
-
-            <div className="glass-card p-6 rounded-xl border border-slate-800/80">
-              <div className="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-4 shadow">
-                <Layers className="w-5 h-5" />
-              </div>
-              <h3 className="text-lg font-bold text-slate-200 mb-2">Environmental Map Layers</h3>
-              <p className="text-slate-400 text-xs leading-relaxed">
-                Toggle overlay filters for morning/afternoon sunlight orientations, flood hazards, guard house distances, and clubhouses.
-              </p>
-            </div>
-
-            <div className="glass-card p-6 rounded-xl border border-slate-800/80">
-              <div className="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-4 shadow">
-                <Compass className="w-5 h-5" />
-              </div>
-              <h3 className="text-lg font-bold text-slate-200 mb-2">Smart Recommendation Filters</h3>
-              <p className="text-slate-400 text-xs leading-relaxed">
-                Input your budget, preferred rooms, parking requirements, and sunlight specs to find optimized coordinates matching your profile.
-              </p>
+            <div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-xs font-bold text-[#64748b]">
+              {['Clear lot availability', 'Receipt review updates', 'Customer account tracking'].map((item) => (
+                <span key={item} className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-600" />{item}</span>
+              ))}
             </div>
           </div>
-        </div>
-      </section>
-
-      {/* 3. Subdivisions Showcase */}
-      <section id="explore-villages" className="py-16 px-4 md:px-8 max-w-7xl mx-auto w-full relative z-10 flex-1">
-        <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
-          <div>
-            <h2 className="text-3xl font-bold text-white">Active Subdivision Portals</h2>
-            <p className="text-slate-400 text-sm mt-1">
-              Select a village to inspect the vector blueprints and start reserving lots.
-            </p>
-          </div>
-          {villages.length === 0 && (
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-2 text-amber-400 text-xs flex items-center gap-1.5 self-start select-none">
-              <ShieldAlert className="w-4 h-4" />
-              <span>Demo Mode: Displaying sample templates. Log in to add active records!</span>
+          <div className="relative overflow-hidden rounded-[2rem] border border-emerald-100 bg-white p-3 shadow-2xl shadow-emerald-900/10">
+            <img src={displayedVillages[0].hero_image_url} alt="Village homes" className="h-[420px] w-full rounded-[1.4rem] object-cover" />
+            <div className="absolute bottom-8 left-8 right-8 rounded-2xl border border-white/60 bg-white/90 p-4 shadow-xl backdrop-blur">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-600 text-white"><Home className="h-5 w-5" /></span>
+                <div><p className="font-extrabold">Find your lot visually</p><p className="text-xs text-[#64748b]">Green means available and ready to view.</p></div>
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        </section>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {displayedVillages.map((village) => (
-            <VillageCard key={village.id} village={village} />
-          ))}
-        </div>
-      </section>
+        <section className="border-y border-[#e2e8f0] bg-white py-16">
+          <div className="mx-auto max-w-7xl px-4 md:px-8">
+            <div className="text-center"><p className="text-xs font-extrabold uppercase tracking-wider text-emerald-600">How It Works</p><h2 className="mt-2 text-3xl font-extrabold">Four simple steps</h2></div>
+            <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+              {steps.map(([number, title, description]) => (
+                <article key={number} className="rounded-2xl border border-[#e2e8f0] p-5 shadow-sm">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 font-extrabold text-white">{number}</span>
+                  <h3 className="mt-4 font-extrabold">{title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-[#64748b]">{description}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-900 bg-slate-950 px-4 py-6 text-center text-xs text-slate-500 z-10 relative">
-        <p>© {new Date().getFullYear()} iReserve Smart Reservation System. Crafted with Next.js & Supabase.</p>
-      </footer>
+        <section id="featured-villages" className="mx-auto max-w-7xl px-4 py-16 md:px-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div><p className="text-xs font-extrabold uppercase tracking-wider text-emerald-600">Featured Villages</p><h2 className="mt-2 text-3xl font-extrabold">Explore available communities</h2><p className="mt-2 text-sm text-[#64748b]">Compare the basics before opening the interactive map.</p></div>
+            <Link href="/villages" className="text-sm font-extrabold text-emerald-700">View all villages</Link>
+          </div>
+          <div className="mt-8">
+            <VillageCarousel villages={displayedVillages.slice(0, 6)} />
+          </div>
+        </section>
+
+        <section className="bg-[#ecfdf5] py-16">
+          <div className="mx-auto max-w-7xl px-4 md:px-8">
+            <div className="text-center"><p className="text-xs font-extrabold uppercase tracking-wider text-emerald-700">Why Use iReserve</p><h2 className="mt-2 text-3xl font-extrabold">Everything important in one place</h2></div>
+            <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {benefits.map(([Icon, title, description]) => (
+                <article key={title} className="rounded-2xl bg-white p-5 shadow-sm"><Icon className="h-6 w-6 text-emerald-600" /><h3 className="mt-4 font-extrabold">{title}</h3><p className="mt-2 text-sm leading-6 text-[#64748b]">{description}</p></article>
+              ))}
+            </div>
+          </div>
+        </section>
+      </main>
+      <footer className="border-t border-[#e2e8f0] bg-white py-6 text-center text-xs text-[#64748b]">© {new Date().getFullYear()} iReserve. All rights reserved.</footer>
     </div>
   );
 }

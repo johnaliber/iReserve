@@ -8,7 +8,9 @@ import {
   BarChart,
   Building,
   Calendar,
+  ChevronDown,
   CreditCard,
+  Bell,
   Home,
   Inbox,
   LayoutDashboard,
@@ -34,6 +36,7 @@ export default function Sidebar({ isOpen, isCollapsed = false, onClose }) {
   const pathname = usePathname();
   const supabase = createClient();
   const [profile, setProfile] = useState(null);
+  const [accountsOpen, setAccountsOpen] = useState(false);
 
   useEffect(() => {
     async function fetchProfile() {
@@ -58,7 +61,8 @@ export default function Sidebar({ isOpen, isCollapsed = false, onClose }) {
     super_admin: [
       { name: 'Dashboard', href: '/super-admin/dashboard', icon: LayoutDashboard },
       { name: 'Villages / Properties', href: '/village-admin/properties', icon: Building },
-      { name: 'Reservations / Siteviewings', href: '/village-admin/reservations', icon: Calendar },
+      { name: 'Reservations', href: '/village-admin/reservations', icon: Inbox },
+      { name: 'Site Viewing Requests', href: '/village-admin/site-viewings', icon: Calendar },
       { name: 'Payments / Booking Audit', href: '/accounting/dashboard', icon: CreditCard },
       { name: 'Reports', href: '/village-admin/reports', icon: BarChart },
       { name: 'Map Canvas Editor', href: '/architect/dashboard', icon: PencilRuler },
@@ -68,7 +72,8 @@ export default function Sidebar({ isOpen, isCollapsed = false, onClose }) {
     village_admin: [
       { name: 'Dashboard', href: '/village-admin/dashboard', icon: LayoutDashboard },
       { name: 'Villages / Properties', href: '/village-admin/properties', icon: Building },
-      { name: 'Reservations / Siteviewings', href: '/village-admin/reservations', icon: Calendar },
+      { name: 'Reservations', href: '/village-admin/reservations', icon: Inbox },
+      { name: 'Site Viewing Requests', href: '/village-admin/site-viewings', icon: Calendar },
       { name: 'Payments / Booking Audit', href: '/village-admin/payments-booking-audit', icon: CreditCard },
       { name: 'Reports', href: '/village-admin/reports', icon: BarChart },
       { name: 'Map Canvas Editor', href: '/village-admin/blueprint-preview', icon: Map },
@@ -85,11 +90,14 @@ export default function Sidebar({ isOpen, isCollapsed = false, onClose }) {
       { name: 'Map Canvas Editor', href: '/architect/dashboard', icon: PencilRuler }
     ],
     customer: [
-      { name: 'Overview', href: '/customer/dashboard', icon: Home },
+      { name: 'Home', href: '/customer/dashboard', icon: Home },
+      // { name: 'Browse Villages', href: '/villages', icon: Building },
       { name: 'My Reservations', href: '/customer/reservations', icon: Inbox },
-      { name: 'Payments Ledger', href: '/customer/payments', icon: CreditCard },
+      { name: 'My Payments', href: '/customer/payments', icon: CreditCard },
       { name: 'My Documents', href: '/customer/documents', icon: Shield },
-      { name: 'Site Viewings', href: '/customer/site-viewing', icon: Calendar }
+      { name: 'Site Viewing', href: '/customer/site-viewing', icon: Calendar },
+      { name: 'Notifications', href: '/customer/notifications', icon: Bell },
+      { name: 'Account', href: '/customer/account', icon: User }
     ]
   };
 
@@ -98,6 +106,7 @@ export default function Sidebar({ isOpen, isCollapsed = false, onClose }) {
   const canManageAccounts = role === 'super_admin' || role === 'village_admin';
   const accountsHref = role === 'super_admin' ? '/super-admin/accounts' : '/village-admin/accounts';
   const superAdminAccountLinks = [
+    { name: 'All Accounts', href: '/super-admin/accounts', icon: Users },
     { name: 'Customer', href: '/super-admin/accounts/customers', icon: User },
     { name: 'Admin', href: '/super-admin/accounts/admins', icon: Building },
     { name: 'Architect', href: '/super-admin/accounts/architects', icon: PencilRuler },
@@ -153,25 +162,45 @@ export default function Sidebar({ isOpen, isCollapsed = false, onClose }) {
             {canManageAccounts && (
               role === 'super_admin' ? (
                 <div className="space-y-1">
-                  <Link
-                    href={accountsHref}
-                    onClick={onClose}
-                    title={isCollapsed ? 'Manage Accounts' : undefined}
-                    className={`flex min-h-11 items-center gap-3 rounded-xl border px-3 text-sm font-bold transition ${
-                      pathname === accountsHref
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                        : 'border-transparent text-[#64748b] hover:border-[#e2e8f0] hover:bg-[#f8fafc] hover:text-[#272727]'
-                    } ${isCollapsed ? 'justify-center' : ''}`}
-                  >
-                    <Users className={`h-4.5 w-4.5 flex-shrink-0 ${
-                      pathname === accountsHref || pathname.startsWith(`${accountsHref}/`)
-                        ? 'text-emerald-600'
-                        : 'text-[#94a3b8]'
-                    }`} />
-                    {!isCollapsed && <span>Manage Accounts</span>}
-                  </Link>
+                  {isCollapsed ? (
+                    <Link
+                      href={accountsHref}
+                      onClick={onClose}
+                      title="Manage Accounts"
+                      className={`flex min-h-11 items-center justify-center rounded-xl border px-3 text-sm font-bold transition ${
+                        pathname === accountsHref || pathname.startsWith(`${accountsHref}/`)
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : 'border-transparent text-[#64748b] hover:border-[#e2e8f0] hover:bg-[#f8fafc] hover:text-[#272727]'
+                      }`}
+                    >
+                      <Users className={`h-4.5 w-4.5 flex-shrink-0 ${
+                        pathname === accountsHref || pathname.startsWith(`${accountsHref}/`)
+                          ? 'text-emerald-600'
+                          : 'text-[#94a3b8]'
+                      }`} />
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setAccountsOpen((open) => !open)}
+                      title={isCollapsed ? 'Manage Accounts' : undefined}
+                      className={`flex min-h-11 w-full items-center gap-3 rounded-xl border px-3 text-left text-sm font-bold transition ${
+                        pathname === accountsHref || pathname.startsWith(`${accountsHref}/`)
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : 'border-transparent text-[#64748b] hover:border-[#e2e8f0] hover:bg-[#f8fafc] hover:text-[#272727]'
+                      }`}
+                    >
+                      <Users className={`h-4.5 w-4.5 flex-shrink-0 ${
+                        pathname === accountsHref || pathname.startsWith(`${accountsHref}/`)
+                          ? 'text-emerald-600'
+                          : 'text-[#94a3b8]'
+                      }`} />
+                      <span className="flex-1">Manage Accounts</span>
+                      <ChevronDown className={`h-4 w-4 flex-shrink-0 text-[#94a3b8] transition-transform ${accountsOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                  )}
 
-                  {!isCollapsed && (
+                  {!isCollapsed && accountsOpen && (
                     <div className="ml-4 space-y-1 border-l border-[#e2e8f0] pl-3">
                       {superAdminAccountLinks.map((link) => {
                         const Icon = link.icon;

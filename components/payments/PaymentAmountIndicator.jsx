@@ -6,12 +6,12 @@ import { formatPeso, roundMoney } from '@/lib/payments/paymentMath';
 
 const styles = {
   not_paid: ['Not Paid', 'bg-gray-50 text-gray-700 border-gray-200', 'No payment has been verified yet.'],
-  insufficient_payment: ['Insufficient Payment', 'bg-red-50 text-red-700 border-red-200', 'Customer has paid below the required initial amount.'],
-  partially_paid: ['Partially Paid', 'bg-blue-50 text-blue-700 border-blue-200', 'Initial payment requirement is completed, but balance remains.'],
-  initial_payment_completed: ['Initial Payment Completed', 'bg-emerald-50 text-emerald-700 border-emerald-200', 'Required reservation/downpayment has been completed.'],
-  fully_paid: ['Fully Paid', 'bg-emerald-50 text-emerald-700 border-emerald-200', 'Customer has completed the full property payment.'],
-  overdue: ['Overdue', 'bg-red-50 text-red-700 border-red-200', 'Customer has overdue payment/s.'],
-  overpaid: ['Overpaid', 'bg-purple-50 text-purple-700 border-purple-200', 'Customer has paid more than the total contract price.']
+  insufficient_payment: ['Insufficient Payment', 'bg-red-50 text-red-700 border-red-200', 'The amount paid is below the required initial amount.'],
+  partially_paid: ['Partially Paid', 'bg-blue-50 text-blue-700 border-blue-200', 'Your initial payment is complete, but a balance remains.'],
+  initial_payment_completed: ['Initial Payment Completed', 'bg-emerald-50 text-emerald-700 border-emerald-200', 'Your required reservation or downpayment is complete.'],
+  fully_paid: ['Fully Paid', 'bg-emerald-50 text-emerald-700 border-emerald-200', 'The full property payment is complete.'],
+  overdue: ['Overdue', 'bg-red-50 text-red-700 border-red-200', 'One or more payments are overdue.'],
+  overpaid: ['Overpaid', 'bg-purple-50 text-purple-700 border-purple-200', 'The amount paid is higher than the total contract price.']
 };
 
 function ProgressLine({ label, paid, required, progress }) {

@@ -4,8 +4,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
-import { Building, Bell, LogOut, User, Menu, X, ArrowLeft } from 'lucide-react';
+import { Bell, LogOut, User, Menu, X } from 'lucide-react';
 import Link from 'next/link';
+import BrandLogo from '@/components/brand/BrandLogo';
+import ConfirmActionDialog from '@/components/shared/ConfirmActionDialog';
 
 export default function Navbar({ toggleSidebar, isSidebarOpen }) {
   const router = useRouter();
@@ -15,6 +17,7 @@ export default function Navbar({ toggleSidebar, isSidebarOpen }) {
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   const fetchNotifications = useCallback(async (userId) => {
     const { data } = await supabase
@@ -90,12 +93,7 @@ export default function Navbar({ toggleSidebar, isSidebarOpen }) {
           </button>
         )}
 
-        <Link href="/" className="flex items-center gap-2 text-emerald-400 font-bold text-xl tracking-wide select-none">
-          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shadow-inner">
-            <Building className="w-4.5 h-4.5" />
-          </div>
-          <span className="text-emerald-600">iReserve</span>
-        </Link>
+        <Link href="/" aria-label="iReserve home"><BrandLogo compact /></Link>
       </div>
 
       <div className="flex items-center gap-4">
@@ -150,6 +148,9 @@ export default function Navbar({ toggleSidebar, isSidebarOpen }) {
                     ))
                   )}
                 </div>
+                <Link href="/customer/notifications" onClick={() => setShowNotifications(false)} className="flex min-h-11 items-center justify-center border-t border-[#e2e8f0] bg-[#f8fafc] text-xs font-extrabold text-emerald-700">
+                  View all notifications
+                </Link>
               </div>
             )}
           </div>
@@ -174,13 +175,13 @@ export default function Navbar({ toggleSidebar, isSidebarOpen }) {
                 className="w-9 h-9 rounded-full object-cover border border-slate-800"
               />
             ) : (
-              <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 font-semibold select-none shadow">
+              <Link href={user.profile?.role === 'customer' ? '/customer/account' : '#'} className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 font-semibold select-none shadow" aria-label="Account settings">
                 <User className="w-4 h-4" />
-              </div>
+              </Link>
             )}
 
             <button
-              onClick={handleLogout}
+              onClick={() => setConfirmLogout(true)}
               title="Log Out"
               className="p-2 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition outline-none cursor-pointer"
             >
@@ -206,6 +207,16 @@ export default function Navbar({ toggleSidebar, isSidebarOpen }) {
       </div>
     </header>
     <div className="h-[61px] flex-shrink-0" aria-hidden="true" />
+    <ConfirmActionDialog
+      open={confirmLogout}
+      title="Log Out?"
+      message="Are you sure you want to log out of your account?"
+      cancelLabel="Stay Logged In"
+      confirmLabel="Log Out"
+      destructive
+      onCancel={() => setConfirmLogout(false)}
+      onConfirm={handleLogout}
+    />
     </>
   );
 }

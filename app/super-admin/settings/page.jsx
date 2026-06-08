@@ -1,10 +1,5 @@
-import AdminPlaceholderPage from '@/components/admin/AdminPlaceholderPage';
+import SiteViewingAvailabilitySettings from '@/components/site-viewings/SiteViewingAvailabilitySettings';
 
 export default function SuperAdminSettingsPage() {
-  return (
-    <AdminPlaceholderPage
-      title="System Settings"
-      description="Configure platform-wide reservation, payment, village visibility, and customer homepage settings."
-    />
-  );
+  return <SiteViewingAvailabilitySettings />;
 }

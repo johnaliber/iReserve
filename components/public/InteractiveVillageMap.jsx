@@ -5,7 +5,6 @@ import dynamic from 'next/dynamic';
 import { createClient } from '@/lib/supabase/client';
 import PropertyDetailModal from './PropertyDetailModal';
 import { 
-  Loader2, 
   Layers, 
   SlidersHorizontal, 
   Coins, 
@@ -14,11 +13,11 @@ import {
   Sun, 
   Search,
   Sparkles,
-  HelpCircle,
   Play,
   ArrowRight
 } from 'lucide-react';
 import Link from 'next/link';
+import DelayedLoadingState from '@/components/shared/DelayedLoadingState';
 
 // Synchronous react-konva imports, component is loaded dynamically by parent pages to avoid SSR issues
 import { Stage, Layer, Line, Circle, Rect, Text, Group, Shape, Image as KonvaImage } from 'react-konva';
@@ -124,6 +123,36 @@ function drawCurvePath(context, points = [], controls = []) {
   }
 }
 
+function normalizeLotPart(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^0+(?=\d)/, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function getObjectBlockLot(object) {
+  const data = object?.object_data || {};
+  const block = data.block_number ?? data.blockNumber ?? data.block;
+  const lot = data.lot_number ?? data.lotNumber ?? data.lot;
+  if (block !== undefined && lot !== undefined) {
+    return { block: normalizeLotPart(block), lot: normalizeLotPart(lot) };
+  }
+
+  const label = String(data.property_code || data.propertyCode || data.name || data.label || '');
+  const explicit = label.match(/block\s*[-:#]?\s*([a-z0-9]+).*?lot\s*[-:#]?\s*([a-z0-9]+)/i);
+  if (explicit) {
+    return { block: normalizeLotPart(explicit[1]), lot: normalizeLotPart(explicit[2]) };
+  }
+
+  const compact = label.match(/\bb\s*([a-z0-9]+)\s*[-_/ ]*l\s*([a-z0-9]+)\b/i);
+  if (compact) {
+    return { block: normalizeLotPart(compact[1]), lot: normalizeLotPart(compact[2]) };
+  }
+
+  return null;
+}
+
 function PublicImageLayer({ object }) {
   const [image, setImage] = useState(null);
   const data = object.object_data || {};
@@ -168,6 +197,8 @@ export default function InteractiveVillageMap({
   const supabase = createClient();
   const stageRef = useRef(null);
   const viewportRef = useRef(null);
+  const hoverCardRef = useRef(null);
+  const hoverFrameRef = useRef(null);
 
   // States
   const [loading, setLoading] = useState(true);
@@ -178,7 +209,7 @@ export default function InteractiveVillageMap({
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [viewportSize, setViewportSize] = useState({ width: 900, height: 600 });
-  const [tooltip, setTooltip] = useState(null);
+  const [hoverPreview, setHoverPreview] = useState(null);
 
   // Overlays
   const [layers, setLayers] = useState({
@@ -225,6 +256,15 @@ export default function InteractiveVillageMap({
   const fetchMapData = useCallback(async () => {
     setLoading(true);
     try {
+      const reconcileResponse = await fetch(
+        `/api/maps/reconcile?villageSlug=${encodeURIComponent(villageSlug)}`,
+        { cache: 'no-store' }
+      );
+      if (!reconcileResponse.ok) {
+        const reconcilePayload = await reconcileResponse.json().catch(() => ({}));
+        console.warn('Map property reconciliation skipped:', reconcilePayload.error || reconcileResponse.statusText);
+      }
+
       // 1. Fetch village
       const { data: v, error: vError } = await supabase
         .from('villages')
@@ -350,10 +390,36 @@ export default function InteractiveVillageMap({
   }, [villageSlug, fetchMapData]);
 
   useEffect(() => {
+    if (!village?.id) return undefined;
+
+    const channel = supabase
+      .channel(`property-status-${village.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'properties',
+          filter: `village_id=eq.${village.id}`
+        },
+        () => fetchMapData()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchMapData, supabase, village?.id]);
+
+  useEffect(() => () => {
+    if (hoverFrameRef.current) cancelAnimationFrame(hoverFrameRef.current);
+  }, []);
+
+  useEffect(() => {
     const timer = setTimeout(() => {
       setZoom(1);
       setPan({ x: 0, y: 0 });
-      setTooltip(null);
+      setHoverPreview(null);
     }, 0);
     return () => clearTimeout(timer);
   }, [villageSlug, preferDraftBlueprint, adminPropertyMode]);
@@ -377,10 +443,23 @@ export default function InteractiveVillageMap({
       .filter((prop) => prop.blueprint_object_id)
       .map((prop) => [prop.blueprint_object_id, prop])
   );
+  const displayedPropsByBlockLot = new Map(
+    displayedProps.map((prop) => [
+      `${normalizeLotPart(prop.block_number)}::${normalizeLotPart(prop.lot_number)}`,
+      prop
+    ])
+  );
 
   const getPropertyForObject = (object) => {
     if (!object) return null;
-    return displayedPropsById.get(object.linked_property_id) || displayedPropsByObjectId.get(object.id) || null;
+    const directMatch = displayedPropsById.get(object.linked_property_id)
+      || displayedPropsByObjectId.get(object.id);
+    if (directMatch) return directMatch;
+
+    const blockLot = getObjectBlockLot(object);
+    return blockLot
+      ? displayedPropsByBlockLot.get(`${blockLot.block}::${blockLot.lot}`) || null
+      : null;
   };
 
   // Find dynamic property status color mapping
@@ -431,19 +510,36 @@ export default function InteractiveVillageMap({
     }
   };
 
-  const updateTooltipPosition = (object) => {
+  const updateHoverPreviewPosition = () => {
     const stage = stageRef.current;
-    if (!stage) return;
+    const card = hoverCardRef.current;
+    const viewport = viewportRef.current;
+    if (!stage || !card || !viewport) return;
     const pointer = stage.getPointerPosition();
     if (!pointer) return;
 
-    setTooltip({
-      x: pointer.x,
-      y: pointer.y,
+    if (hoverFrameRef.current) cancelAnimationFrame(hoverFrameRef.current);
+    hoverFrameRef.current = requestAnimationFrame(() => {
+      const cardRect = card.getBoundingClientRect();
+      const viewportRect = viewport.getBoundingClientRect();
+      const padding = 14;
+      const x = Math.min(pointer.x + 18, Math.max(padding, viewportRect.width - cardRect.width - padding));
+      const y = Math.min(pointer.y + 18, Math.max(padding, viewportRect.height - cardRect.height - padding));
+      card.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+    });
+  };
+
+  const showHoverPreview = (object) => {
+    setHoverPreview({
       object,
       property: getPropertyForObject(object)
     });
+    requestAnimationFrame(updateHoverPreviewPosition);
   };
+
+  useEffect(() => {
+    if (hoverPreview) requestAnimationFrame(updateHoverPreviewPosition);
+  }, [hoverPreview]);
 
   // 1. FILTERING SYSTEM
   const filteredProps = displayedProps.filter((p) => {
@@ -453,6 +549,19 @@ export default function InteractiveVillageMap({
     if (floodRiskFilter && p.flood_risk !== floodRiskFilter) return false;
     return true;
   });
+  const filteredPropertyIds = new Set(filteredProps.map((property) => property.id));
+  const mappedPropertyIds = new Set(
+    objects
+      .filter((object) => object.object_type === 'lot' || object.object_type === 'house')
+      .map((object) => getPropertyForObject(object)?.id)
+      .filter(Boolean)
+  );
+  const mappedProperties = displayedProps.filter((property) => mappedPropertyIds.has(property.id));
+  const unmappedPropertyCount = displayedProps.length - mappedProperties.length;
+  const statusCounts = mappedProperties.reduce((counts, property) => {
+    counts[property.status] = (counts[property.status] || 0) + 1;
+    return counts;
+  }, {});
 
   // 2. RULE-BASED PROPERTY RECOMMENDATION ENGINE
   const handleCalculateRecommendations = () => {
@@ -532,12 +641,7 @@ export default function InteractiveVillageMap({
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[500px] text-slate-400">
-        <Loader2 className="w-10 h-10 text-emerald-400 animate-spin mb-4" />
-        <span className="text-sm font-semibold uppercase tracking-wider">Loading subdivision map...</span>
-      </div>
-    );
+    return <DelayedLoadingState loading message="Loading the interactive village map..." />;
   }
 
   if (!allowDemoFallback && !adminPropertyMode && objects.length === 0) {
@@ -547,15 +651,15 @@ export default function InteractiveVillageMap({
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-100 bg-emerald-50 text-emerald-600">
             <Layers className="h-6 w-6" />
           </div>
-          <h2 className="text-xl font-extrabold text-[#272727]">No blueprint available</h2>
+          <h2 className="text-xl font-extrabold text-[#272727]">Map not available yet</h2>
           <p className="mt-2 text-sm leading-relaxed text-[#64748b]">
-            There is no published blueprint for {village?.name || 'this village'} yet. Please check back once the village admin has uploaded and published the subdivision map.
+            The interactive map for {village?.name || 'this village'} is still being prepared. Please check again later.
           </p>
           <Link
-            href="/customer/dashboard"
+            href="/"
             className="mt-6 inline-flex items-center justify-center rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-extrabold text-white shadow-sm transition hover:bg-emerald-500"
           >
-            Back to Account
+            Back to Home
           </Link>
         </div>
       </div>
@@ -563,7 +667,13 @@ export default function InteractiveVillageMap({
   }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 items-stretch relative min-h-[calc(100vh-80px)] w-full">
+    <div className="w-full">
+      {!adminPropertyMode && (
+        <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
+          Click a green lot to view details and start your reservation.
+        </div>
+      )}
+      <div className="flex flex-col lg:flex-row gap-6 items-stretch relative min-h-[calc(100vh-80px)] w-full">
       
       {/* 1. Left Column: Map legend, Filters, and Recommendations */}
       {!hideSidebar && (
@@ -577,21 +687,27 @@ export default function InteractiveVillageMap({
           <div className="grid grid-cols-2 gap-3 text-xs font-medium">
             <div className="flex items-center gap-2">
               <span className="w-3.5 h-3.5 bg-emerald-500 rounded-lg shadow-inner" />
-              <span>Available</span>
+              <span>Available ({statusCounts.available || 0})</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-3.5 h-3.5 bg-amber-500 rounded-lg shadow-inner" />
-              <span>Reserved</span>
+              <span>Reserved ({statusCounts.reserved || 0})</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-3.5 h-3.5 bg-red-500 rounded-lg shadow-inner" />
-              <span>Sold</span>
+              <span>Sold ({statusCounts.sold || 0})</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-3.5 h-3.5 bg-slate-500 rounded-lg shadow-inner" />
-              <span>Maintenance</span>
+              <span>Maintenance ({statusCounts.under_maintenance || 0})</span>
             </div>
           </div>
+          {unmappedPropertyCount > 0 && (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold leading-5 text-amber-800">
+              {unmappedPropertyCount} {unmappedPropertyCount === 1 ? 'property is' : 'properties are'} not linked to a map shape yet.
+              {' The system will link available map shapes automatically when this map refreshes.'}
+            </div>
+          )}
         </div>
 
         {/* Dynamic Filters */}
@@ -599,7 +715,7 @@ export default function InteractiveVillageMap({
           <div className={`flex items-center justify-between mb-4 border-b pb-3 ${adminPropertyMode ? 'border-[#e2e8f0]' : 'border-slate-800'}`}>
             <h4 className="text-xs font-extrabold text-[#272727] uppercase tracking-wider flex items-center gap-1.5">
               <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-400" />
-              Blueprint Filters
+              Find a Lot
             </h4>
             {showSmartAssistant && showRecommendation && (
               <button 
@@ -620,7 +736,7 @@ export default function InteractiveVillageMap({
                   onChange={(e) => setStatusFilter(e.target.value)}
                   className={filterControlClass}
                 >
-                  <option value="">All Statuses</option>
+                  <option value="">All lots</option>
                   <option value="available">Available (Green)</option>
                   <option value="reserved">Reserved (Yellow)</option>
                   <option value="sold">Sold (Red)</option>
@@ -735,8 +851,9 @@ export default function InteractiveVillageMap({
                       className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-900 hover:border-emerald-500/20 transition cursor-pointer flex justify-between items-center"
                     >
                       <div>
-                        <span className="font-bold text-slate-200 block text-[11px]">{property.property_code}</span>
-                        <span className="text-[10px] text-slate-500">Block {property.block_number} Lot {property.lot_number}</span>
+                        <span className="font-bold text-slate-200 block text-[11px]">
+                          Block {property.block_number} Lot {property.lot_number}
+                        </span>
                       </div>
                       <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
                         {score}% Match
@@ -753,6 +870,14 @@ export default function InteractiveVillageMap({
 
       {/* 2. Right Column: Konva stage viewport */}
       <div ref={viewportRef} className="flex-1 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden relative shadow-inner min-h-[500px]">
+        {!adminPropertyMode && (
+          <div className="absolute right-3 top-3 z-20 flex flex-wrap justify-end gap-2">
+            <button type="button" onClick={() => setZoom((value) => Math.min(3, value * 1.2))} className="min-h-10 rounded-xl border border-[#dbe4ee] bg-white/95 px-3 text-xs font-extrabold shadow">Zoom In</button>
+            <button type="button" onClick={() => setZoom((value) => Math.max(0.35, value / 1.2))} className="min-h-10 rounded-xl border border-[#dbe4ee] bg-white/95 px-3 text-xs font-extrabold shadow">Zoom Out</button>
+            <button type="button" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} className="min-h-10 rounded-xl border border-[#dbe4ee] bg-white/95 px-3 text-xs font-extrabold shadow">Reset View</button>
+            <button type="button" onClick={() => setStatusFilter((value) => value === 'available' ? '' : 'available')} className={`min-h-10 rounded-xl border px-3 text-xs font-extrabold shadow ${statusFilter === 'available' ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-[#dbe4ee] bg-white/95'}`}>Available Only</button>
+          </div>
+        )}
         {/* Layer Visibility Overrides Controls inside the Stage */}
         <div className="absolute top-4 left-4 z-10 bg-slate-950/80 border border-slate-850 p-2 rounded-xl flex items-center gap-2 text-xs select-none glass-card font-medium">
           <Layers className="w-3.5 h-3.5 text-emerald-400" />
@@ -794,6 +919,7 @@ export default function InteractiveVillageMap({
               y: e.target.y() - fitTransform.y
             });
           }}
+          onDragStart={() => setHoverPreview(null)}
           draggable={true}
           className="cursor-grab active:cursor-grabbing"
         >
@@ -893,7 +1019,9 @@ export default function InteractiveVillageMap({
               .filter(o => o.object_type === 'lot' || o.object_type === 'house')
               .filter((lot) => {
                 const prop = getPropertyForObject(lot);
-                return adminPropertyMode || prop?.status !== 'hidden';
+                if (!adminPropertyMode && prop?.status === 'hidden') return false;
+                if (!prop) return adminPropertyMode && !statusFilter;
+                return filteredPropertyIds.has(prop.id);
               })
               .map((lot) => {
                 const data = lot.object_data || {};
@@ -910,14 +1038,14 @@ export default function InteractiveVillageMap({
                     onMouseEnter={() => {
                       if (!isClickable) return;
                       setStageCursor('pointer');
-                      updateTooltipPosition(lot);
+                      showHoverPreview(lot);
                     }}
                     onMouseMove={() => {
-                      if (isClickable) updateTooltipPosition(lot);
+                      if (isClickable) updateHoverPreviewPosition();
                     }}
                     onMouseLeave={() => {
                       setStageCursor('grab');
-                      setTooltip(null);
+                      setHoverPreview(null);
                     }}
                   >
                     <Line
@@ -928,7 +1056,7 @@ export default function InteractiveVillageMap({
                       closed={true}
                       opacity={0.6}
                     />
-                    {data.points && data.points.length >= 4 && (
+                    {adminPropertyMode && data.points && data.points.length >= 4 && (
                       <Text
                         text={data.name || ''}
                         x={data.points[0]}
@@ -1030,22 +1158,102 @@ export default function InteractiveVillageMap({
               })}
           </Layer>
         </Stage>
-        {tooltip && (
+        {hoverPreview && (
           <div
-            className="pointer-events-none absolute z-20 min-w-56 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-[#272727] shadow-xl"
-            style={{ left: tooltip.x + 18, top: tooltip.y + 18 }}
+            ref={hoverCardRef}
+            className="pointer-events-none absolute left-0 top-0 z-20 w-[calc(100%-28px)] max-w-[330px] overflow-hidden rounded-2xl border border-[#dbe4ee] bg-white text-[#272727] shadow-[0_18px_45px_rgba(15,23,42,0.22)] will-change-transform"
+            style={{ transform: 'translate3d(18px, 18px, 0)' }}
           >
-            {tooltip.property ? (
-              <div className="space-y-1">
-                <div className="font-extrabold text-[#272727]">{tooltip.property.property_code}</div>
-                <div>Block {tooltip.property.block_number} Lot {tooltip.property.lot_number}</div>
-                <div className="capitalize">Status: {tooltip.property.status?.replaceAll('_', ' ')}</div>
-                <div>Price: ₱{Number(tooltip.property.price || 0).toLocaleString()}</div>
+            {hoverPreview.property ? (
+              <div className="p-4">
+                <div className="mb-4 flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-emerald-600">
+                      {hoverPreview.property.property_type === 'lot' ? 'Residential Lot' : 'Home Preview'}
+                    </p>
+                    <h3 className="mt-1 text-lg font-extrabold leading-tight text-[#171717]">
+                      {adminPropertyMode
+                        ? hoverPreview.property.property_code
+                        : `Block ${hoverPreview.property.block_number}, Lot ${hoverPreview.property.lot_number}`}
+                    </h3>
+                    {adminPropertyMode && (
+                      <p className="mt-1 text-xs font-medium text-[#64748b]">
+                        Block {hoverPreview.property.block_number}, Lot {hoverPreview.property.lot_number}
+                      </p>
+                    )}
+                  </div>
+                  <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-wider ${
+                    hoverPreview.property.status === 'available'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : hoverPreview.property.status === 'reserved'
+                        ? 'border-amber-200 bg-amber-50 text-amber-700'
+                        : hoverPreview.property.status === 'sold'
+                          ? 'border-rose-200 bg-rose-50 text-rose-700'
+                          : 'border-slate-200 bg-slate-100 text-slate-600'
+                  }`}>
+                    {hoverPreview.property.status?.replaceAll('_', ' ')}
+                  </span>
+                </div>
+
+                <div className="h-40 overflow-hidden rounded-xl bg-[#f1f5f9]">
+                  <img
+                    src={hoverPreview.property.thumbnail_url || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=500&q=80'}
+                    alt="Property preview"
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+
+                <div className="mt-4">
+                  <h4 className="text-base font-extrabold text-[#171717]">
+                    {hoverPreview.property.model_name
+                      || hoverPreview.property.property_type?.replaceAll('_', ' ')
+                      || 'Lot / House'}
+                  </h4>
+                  <p className="mt-1 text-xs font-medium text-[#64748b]">
+                    {village?.name || 'Village'}{hoverPreview.property.street_name ? ` - ${hoverPreview.property.street_name}` : ''}
+                  </p>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-3 border-y border-[#eef2f7] py-3 text-xs">
+                  <div>
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-[#94a3b8]">Price</p>
+                    <p className="mt-1 font-extrabold text-[#171717]">
+                      PHP {Number(hoverPreview.property.price || 0).toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-[#94a3b8]">Lot Area</p>
+                    <p className="mt-1 font-extrabold text-[#171717]">
+                      {hoverPreview.property.lot_size || 0} sqm
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-[#94a3b8]">Floor Area</p>
+                    <p className="mt-1 font-extrabold text-[#171717]">
+                      {hoverPreview.property.floor_area ? `${hoverPreview.property.floor_area} sqm` : 'Not applicable'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-[#94a3b8]">Bedrooms</p>
+                    <p className="mt-1 font-extrabold text-[#171717]">
+                      {hoverPreview.property.bedrooms || 'Not applicable'}
+                    </p>
+                  </div>
+                </div>
+
+                <p className="pt-3 text-center text-xs font-extrabold text-emerald-700">
+                  Click this lot to view full details
+                </p>
               </div>
             ) : (
-              <div className="space-y-1">
-                <div className="font-extrabold text-[#272727]">{tooltip.object?.object_data?.name || 'Unlinked lot'}</div>
-                <div>No property details yet</div>
+              <div className="p-5">
+                <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#94a3b8]">Map Area</p>
+                <h3 className="mt-1 text-lg font-extrabold text-[#171717]">
+                  {hoverPreview.object?.object_data?.name || 'Lot details unavailable'}
+                </h3>
+                <p className="mt-2 text-xs leading-5 text-[#64748b]">
+                  Property information has not been added for this map area.
+                </p>
               </div>
             )}
           </div>
@@ -1055,13 +1263,14 @@ export default function InteractiveVillageMap({
       {/* 3. Details Dialog Modal Popup */}
       <PropertyDetailModal
         property={selectedProperty}
+        showInternalCode={adminPropertyMode}
         isOpen={isModalOpen}
         onClose={() => {
           setIsModalOpen(false);
           setSelectedProperty(null);
         }}
       />
-      
+      </div>
     </div>
   );
 }

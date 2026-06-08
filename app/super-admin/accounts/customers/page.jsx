@@ -1,5 +1,11 @@
-import AdminPlaceholderPage from '@/components/admin/AdminPlaceholderPage';
+import SuperAdminAccountsPage from '../page';
 
 export default function CustomerAccountsPage() {
-  return <AdminPlaceholderPage title="Customer Accounts" description="Review and manage customer profiles across active villages." />;
+  return (
+    <SuperAdminAccountsPage
+      defaultRoleFilter="customer"
+      pageTitle="Customer Accounts"
+      pageDescription="Review and manage customer profiles across active villages."
+    />
+  );
 }

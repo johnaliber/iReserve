@@ -1,30 +1,34 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { 
   Building, 
   Coins, 
   User, 
-  Mail, 
-  Phone, 
-  MapPin, 
-  FileText, 
-  Check, 
   ArrowRight,
+  CheckCircle2,
   Loader2,
   Lock,
-  Wallet
+  QrCode,
+  Wallet,
+  Upload
 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
 import PaymentTypeSelector from '@/components/payments/PaymentTypeSelector';
 import PaymentCalculator from '@/components/payments/PaymentCalculator';
+import PaymentQr, { makePaymentCode } from '@/components/payments/PaymentQr';
 import { calculatePaymentPlan, formatPeso } from '@/lib/payments/paymentMath';
+import ConfirmActionDialog from '@/components/shared/ConfirmActionDialog';
+import ReservationProgressSteps from '@/components/customer/ReservationProgressSteps';
+import DelayedLoadingState from '@/components/shared/DelayedLoadingState';
+import HelpText from '@/components/shared/HelpText';
 
 export default function ReservePropertyPage() {
   const router = useRouter();
   const { propertyId } = useParams();
+  const searchParams = useSearchParams();
   const supabase = createClient();
 
   const [loading, setLoading] = useState(true);
@@ -38,19 +42,20 @@ export default function ReservePropertyPage() {
   const [paymentMethod, setPaymentMethod] = useState('gcash');
   const [paymentType, setPaymentType] = useState('partial_payment');
   const [downpaymentPercentage, setDownpaymentPercentage] = useState(20);
-  const [downpaymentAmount, setDownpaymentAmount] = useState('');
   const [installmentTermMonths, setInstallmentTermMonths] = useState(24);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [receiptRef, setReceiptRef] = useState('');
+  const [paymentStarted, setPaymentStarted] = useState(false);
+  const [paymentCode, setPaymentCode] = useState('');
   
-  // Document Upload States (Simulated URL inputs for simplicity in local setups, backed by File API bindings)
-  const [validIdUrl, setValidIdUrl] = useState('https://via.placeholder.com/150/id.png');
-  const [incomeProofUrl, setIncomeProofUrl] = useState('https://via.placeholder.com/150/income.png');
+  const [validIdFile, setValidIdFile] = useState(null);
+  const [incomeProofFile, setIncomeProofFile] = useState(null);
   
   const [agreed, setAgreed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [isStaff, setIsStaff] = useState(false);
+  const [confirmReservation, setConfirmReservation] = useState(false);
 
   const fetchProperty = useCallback(async () => {
     try {
@@ -62,8 +67,14 @@ export default function ReservePropertyPage() {
 
       if (!error && data) {
         setProperty(data);
-        setDownpaymentPercentage(Number(data.downpayment_percentage || 20));
-        setInstallmentTermMonths(Number(data.default_loan_term_years || 2) * 12);
+        const selectedDownpayment = Number(searchParams.get('downpayment_percentage'));
+        const selectedLoanTermYears = Number(searchParams.get('loan_term_years'));
+        setDownpaymentPercentage(Number.isFinite(selectedDownpayment) && selectedDownpayment > 0
+          ? selectedDownpayment
+          : Number(data.downpayment_percentage || 20));
+        setInstallmentTermMonths((Number.isFinite(selectedLoanTermYears) && selectedLoanTermYears > 0
+          ? selectedLoanTermYears
+          : Number(data.default_loan_term_years || 2)) * 12);
         
         // Pre-fill user profile fields if logged in
         const { data: { user } } = await supabase.auth.getUser();
@@ -127,7 +138,7 @@ export default function ReservePropertyPage() {
     } finally {
       setLoading(false);
     }
-  }, [propertyId, supabase]);
+  }, [propertyId, supabase, searchParams]);
 
   useEffect(() => {
     if (propertyId) {
@@ -140,16 +151,38 @@ export default function ReservePropertyPage() {
     return undefined;
   }, [propertyId, fetchProperty]);
 
-  const handleBookingSubmit = async (e) => {
-    e.preventDefault();
+  const resetGeneratedPayment = () => {
+    setPaymentStarted(false);
+    setPaymentCode('');
+    setPaymentAmount('');
+  };
+
+  const validateReservation = () => {
     if (isStaff) {
       setError('Staff accounts are blocked from making property reservations.');
-      return;
+      return false;
     }
     if (!fullName || !email || !agreed) {
       setError('Please fill in all required fields and agree to the purchase terms.');
-      return;
+      return false;
     }
+    if (!validIdFile || !incomeProofFile) {
+      setError('Please upload your Government ID and Proof of Income before reserving this property.');
+      return false;
+    }
+    if (!paymentStarted) {
+      setError('Please click Pay Now and scan the generated QR code before confirming your reservation.');
+      return false;
+    }
+    if (!receiptRef.trim()) {
+      setError('Please enter the transaction reference from your payment app.');
+      return false;
+    }
+    return true;
+  };
+
+  const handleBookingSubmit = async () => {
+    if (!validateReservation()) return;
 
     setSubmitting(true);
     setError('');
@@ -159,34 +192,37 @@ export default function ReservePropertyPage() {
         propertyPrice: property?.price || 0,
         reservationFee: property?.reservation_fee || 0,
         paymentType,
-        downpaymentAmount,
+        downpaymentAmount: '',
         downpaymentPercentage,
         installmentTermMonths,
         interestRate: property?.interest_rate || 0
       });
       const submittedAmount = Number(paymentAmount || planPreview.initialAmountDue);
+      if (submittedAmount < planPreview.initialAmountDue) {
+        throw new Error(`Please pay the full initial amount due: ${formatPeso(planPreview.initialAmountDue)}.`);
+      }
       if (submittedAmount > planPreview.initialAmountDue) {
         throw new Error(`Payment amount cannot exceed ${formatPeso(planPreview.initialAmountDue)}.`);
       }
 
+      const formData = new FormData();
+      formData.append('propertyId', property?.id || propertyId);
+      formData.append('fullName', fullName);
+      formData.append('email', email);
+      formData.append('phone', phone);
+      formData.append('paymentMethod', paymentMethod);
+      formData.append('paymentType', paymentType);
+      formData.append('downpaymentAmount', '');
+      formData.append('downpaymentPercentage', downpaymentPercentage);
+      formData.append('installmentTermMonths', installmentTermMonths);
+      formData.append('submittedAmount', String(submittedAmount));
+      formData.append('receiptRef', receiptRef);
+      formData.append('validIdFile', validIdFile);
+      formData.append('incomeProofFile', incomeProofFile);
+
       const response = await fetch('/api/reservations/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          propertyId: property?.id || propertyId,
-          fullName,
-          email,
-          phone,
-          paymentMethod,
-          paymentType,
-          downpaymentAmount,
-          downpaymentPercentage,
-          installmentTermMonths,
-          submittedAmount,
-          receiptRef,
-          validIdUrl,
-          incomeProofUrl
-        })
+        body: formData
       });
 
       const payload = await response.json();
@@ -203,26 +239,49 @@ export default function ReservePropertyPage() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400">
-        <Loader2 className="w-10 h-10 text-emerald-400 animate-spin mb-4" />
-        <span className="text-sm font-semibold uppercase tracking-wider">Opening checkout desk...</span>
-      </div>
-    );
+    return <DelayedLoadingState loading fullScreen message="Preparing your reservation form..." />;
   }
+
+  const checkoutPlan = calculatePaymentPlan({
+    propertyPrice: property?.price || 0,
+    reservationFee: property?.reservation_fee || 0,
+    paymentType,
+    downpaymentAmount: '',
+    downpaymentPercentage,
+    installmentTermMonths,
+    interestRate: property?.interest_rate || 0
+  });
+  const paymentPayload = [
+    'iReserve',
+    `block-${property?.block_number || 'unknown'}-lot-${property?.lot_number || 'unknown'}`,
+    paymentMethod,
+    checkoutPlan.initialAmountDue,
+    email || 'guest'
+  ].join('|');
+  const canSubmitReservation = Boolean(paymentStarted && receiptRef.trim() && agreed && validIdFile && incomeProofFile);
+
+  const handlePayNow = () => {
+    const code = makePaymentCode(paymentPayload);
+    setPaymentCode(code);
+    setPaymentAmount(String(checkoutPlan.initialAmountDue));
+    setPaymentStarted(true);
+    setError('');
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col relative overflow-hidden">
       <Navbar />
 
-      <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-12 relative z-10 grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <main className="relative z-10 mx-auto w-full max-w-6xl flex-1 px-4 py-8">
+        <ReservationProgressSteps currentStep={2} />
+        <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-3">
         
         {/* Left Column: Input Form */}
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 md:p-8 glass-card">
             <h2 className="text-xl font-bold mb-6 text-slate-200 border-b border-slate-800 pb-3 flex items-center gap-2">
               <User className="w-5 h-5 text-emerald-400" />
-              Reservation Booking Details
+              Reserve This Lot
             </h2>
 
             {error && (
@@ -238,7 +297,7 @@ export default function ReservePropertyPage() {
                 </div>
                 <h3 className="text-lg font-bold text-slate-200">Staff Account: Reservation Restricted</h3>
                 <p className="text-slate-400 text-xs max-w-md mx-auto leading-relaxed">
-                  Only client/customer accounts are permitted to request reservations on iReserve lot coordinates. Administrative and design roles are restricted from booking inventory during map previews or direct site hits.
+                  Reservations can only be submitted from a customer account. Please return to your staff dashboard or sign out to continue as a customer.
                 </p>
                 <div className="pt-4 flex justify-center gap-4">
                   <button
@@ -259,7 +318,12 @@ export default function ReservePropertyPage() {
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleBookingSubmit} className="space-y-5">
+              <form onSubmit={(event) => { event.preventDefault(); if (validateReservation()) setConfirmReservation(true); }} className="space-y-6">
+                <div>
+                  <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-600">Step 1</p>
+                  <h3 className="mt-1 text-lg font-extrabold text-[#272727]">Personal Details</h3>
+                  <p className="mb-4 mt-1 text-xs text-[#64748b]">Enter the contact information the village team should use.</p>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
@@ -318,40 +382,38 @@ export default function ReservePropertyPage() {
 
                 <hr className="border-slate-800/60 my-6" />
 
-                <h3 className="text-sm font-bold text-slate-200 mb-3 flex items-center gap-1.5">
+                <div>
+                <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-600">Step 2</p>
+                <h3 className="mt-1 text-lg font-extrabold text-[#272727] mb-3 flex items-center gap-1.5">
                   <Coins className="w-4.5 h-4.5 text-emerald-400" />
                   Payment Option
                 </h3>
+                </div>
 
-                <PaymentTypeSelector value={paymentType} onChange={setPaymentType} />
+                <PaymentTypeSelector
+                  value={paymentType}
+                  onChange={(nextType) => {
+                    setPaymentType(nextType);
+                    resetGeneratedPayment();
+                  }}
+                />
 
                 {['partial_payment', 'installment'].includes(paymentType) && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                        Downpayment Percentage
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={downpaymentPercentage}
-                        onChange={(e) => setDownpaymentPercentage(e.target.value)}
-                        className="w-full bg-white border border-slate-800 rounded-xl py-2.5 px-4 text-[#272727] outline-none text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                        Fixed Downpayment Amount
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={downpaymentAmount}
-                        onChange={(e) => setDownpaymentAmount(e.target.value)}
-                        placeholder="Optional"
-                        className="w-full bg-white border border-slate-800 rounded-xl py-2.5 px-4 text-[#272727] outline-none text-sm"
-                      />
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">Selected Downpayment</p>
+                        <p className="mt-1 text-sm font-bold text-[#272727]">
+                          {downpaymentPercentage}% of the property price
+                        </p>
+                        <p className="mt-1 text-xs text-[#64748b]">
+                          This value comes from the property preview calculator and is locked for this reservation.
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-emerald-200 bg-white px-4 py-3 text-left md:text-right">
+                        <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#64748b]">Downpayment Amount</p>
+                        <p className="text-lg font-extrabold text-emerald-600">{formatPeso(checkoutPlan.downpaymentAmount)}</p>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -363,7 +425,10 @@ export default function ReservePropertyPage() {
                     </label>
                     <select
                       value={installmentTermMonths}
-                      onChange={(e) => setInstallmentTermMonths(e.target.value)}
+                      onChange={(e) => {
+                        setInstallmentTermMonths(e.target.value);
+                        resetGeneratedPayment();
+                      }}
                       className="w-full bg-white border border-slate-800 rounded-xl py-2.5 px-4 text-[#272727] outline-none text-sm"
                     >
                       <option value={6}>6 months</option>
@@ -382,110 +447,166 @@ export default function ReservePropertyPage() {
                   propertyPrice={property?.price || 0}
                   reservationFee={property?.reservation_fee || 0}
                   paymentType={paymentType}
-                  downpaymentAmount={downpaymentAmount}
+                  downpaymentAmount=""
                   downpaymentPercentage={downpaymentPercentage}
                   installmentTermMonths={installmentTermMonths}
                   interestRate={property?.interest_rate || 0}
                 />
 
-                <h3 className="text-sm font-bold text-slate-200 mb-3 flex items-center gap-1.5">
-                  <Wallet className="w-4.5 h-4.5 text-emerald-400" />
-                  Hold Deposit Fee Payment
-                </h3>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {['gcash', 'maya', 'bank_transfer'].map((method) => (
-                    <label
-                      key={method}
-                      className={`flex flex-col items-center justify-center p-4 rounded-xl border cursor-pointer select-none transition ${
-                        paymentMethod === method
-                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                          : 'bg-slate-950/30 border-slate-850 text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="payment_method"
-                        value={method}
-                        checked={paymentMethod === method}
-                        onChange={(e) => setPaymentMethod(e.target.value)}
-                        className="hidden"
-                      />
-                      <span className="text-xs font-bold uppercase tracking-wider">{method.replace('_', ' ')}</span>
-                    </label>
-                  ))}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                    Receipt reference / OR Number
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={receiptRef}
-                    onChange={(e) => setReceiptRef(e.target.value)}
-                    placeholder="Enter transaction reference hash or number"
-                    className="w-full bg-slate-950/50 border border-slate-800 focus:border-emerald-500/60 rounded-xl py-2.5 px-4 text-slate-200 placeholder-slate-600 outline-none text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                    Payment Amount
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    max={calculatePaymentPlan({
-                      propertyPrice: property?.price || 0,
-                      reservationFee: property?.reservation_fee || 0,
-                      paymentType,
-                      downpaymentAmount,
-                      downpaymentPercentage,
-                      installmentTermMonths,
-                      interestRate: property?.interest_rate || 0
-                    }).initialAmountDue}
-                    value={paymentAmount}
-                    onChange={(e) => setPaymentAmount(e.target.value)}
-                    placeholder={`Maximum: ${formatPeso(calculatePaymentPlan({
-                      propertyPrice: property?.price || 0,
-                      reservationFee: property?.reservation_fee || 0,
-                      paymentType,
-                      downpaymentAmount,
-                      downpaymentPercentage,
-                      installmentTermMonths,
-                      interestRate: property?.interest_rate || 0
-                    }).initialAmountDue)}`}
-                    className="w-full bg-white border border-slate-800 rounded-xl py-2.5 px-4 text-[#272727] outline-none text-sm"
-                  />
-                </div>
-
-                <div className="flex gap-4">
-                  <div className="flex-1">
-                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Government ID</label>
-                    <input
-                      type="text"
-                      value={validIdUrl}
-                      onChange={(e) => setValidIdUrl(e.target.value)}
-                      className="w-full bg-slate-950/30 border border-slate-900 rounded-lg p-2 text-xs text-slate-500 outline-none cursor-not-allowed"
-                      disabled
-                    />
-                    <span className="text-[10px] text-slate-500 mt-1 block">ID Photo attached successfully.</span>
+                <section className="rounded-2xl border border-[#e2e8f0] bg-white p-4 shadow-sm">
+                  <div className="mb-4 flex flex-col gap-2 border-b border-[#e2e8f0] pb-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <h3 className="flex items-center gap-1.5 text-sm font-extrabold text-[#272727]">
+                        <Wallet className="h-4.5 w-4.5 text-emerald-500" />
+                        Step 3: Pay and Enter Receipt Details
+                      </h3>
+                      <p className="mt-1 text-xs text-[#64748b]">Generate a QR for the exact amount due, then enter the transaction reference.</p>
+                    </div>
+                    <div className="rounded-lg bg-emerald-50 px-3 py-2 text-left md:text-right">
+                      <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">Amount Due</p>
+                      <p className="text-lg font-extrabold text-emerald-700">{formatPeso(checkoutPlan.initialAmountDue)}</p>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Proof of Income</label>
-                    <input
-                      type="text"
-                      value={incomeProofUrl}
-                      onChange={(e) => setIncomeProofUrl(e.target.value)}
-                      className="w-full bg-slate-950/30 border border-slate-900 rounded-lg p-2 text-xs text-slate-500 outline-none cursor-not-allowed"
-                      disabled
-                    />
-                    <span className="text-[10px] text-slate-500 mt-1 block">Statement slip attached successfully.</span>
+
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_180px]">
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-3 gap-2">
+                        {['gcash', 'maya', 'bank_transfer'].map((method) => (
+                          <label
+                            key={method}
+                            className={`flex min-h-11 items-center justify-center rounded-xl border px-2 text-center text-[11px] font-extrabold uppercase tracking-wider transition ${
+                              paymentMethod === method
+                                ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                                : 'border-[#e2e8f0] bg-white text-[#64748b] hover:border-emerald-200'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="payment_method"
+                              value={method}
+                              checked={paymentMethod === method}
+                              onChange={(e) => {
+                                setPaymentMethod(e.target.value);
+                                resetGeneratedPayment();
+                              }}
+                              className="hidden"
+                            />
+                            {method.replace('_', ' ')}
+                          </label>
+                        ))}
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_160px]">
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-[#64748b]">
+                            Transaction Reference
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={receiptRef}
+                            onChange={(e) => setReceiptRef(e.target.value)}
+                            placeholder="Paste the reference from your payment app"
+                            className="w-full rounded-xl border border-[#dbe4ee] bg-white px-3 py-2.5 text-sm text-[#272727] outline-none transition focus:border-emerald-500/60"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-[#64748b]">
+                            Paid Amount
+                          </label>
+                          <input
+                            type="number"
+                            required
+                            readOnly
+                            value={paymentAmount}
+                            placeholder={formatPeso(checkoutPlan.initialAmountDue)}
+                            className="w-full rounded-xl border border-[#dbe4ee] bg-[#f8fafc] px-3 py-2.5 text-sm font-bold text-[#272727] outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handlePayNow}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-extrabold text-white shadow-sm transition hover:bg-emerald-500"
+                      >
+                        <QrCode className="h-4.5 w-4.5" />
+                        Pay Now and Generate QR
+                      </button>
+                    </div>
+
+                    <div className="rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-3">
+                      {paymentStarted ? (
+                        <div className="space-y-2">
+                          <div className="mx-auto h-36 w-36">
+                            <PaymentQr value={`${paymentPayload}|${paymentCode}`} />
+                          </div>
+                          <div className="text-center">
+                            <p className="font-mono text-xs font-extrabold text-[#272727]">{paymentCode}</p>
+                            <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700">Scan to pay</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex h-full min-h-40 flex-col items-center justify-center text-center text-[#64748b]">
+                          <QrCode className="mb-2 h-8 w-8 text-[#94a3b8]" />
+                          <p className="text-xs font-bold">QR appears after Pay Now.</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+
+                  {paymentStarted && (
+                    <p className="mt-3 flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+                      <CheckCircle2 className="h-4 w-4" />
+                      QR generated for {formatPeso(checkoutPlan.initialAmountDue)} via {paymentMethod.replace('_', ' ')}. Enter the transaction reference before confirming.
+                    </p>
+                  )}
+                </section>
+
+                <section className="rounded-2xl border border-[#e2e8f0] bg-white p-4 shadow-sm">
+                  <div className="mb-3">
+                    <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-600">Step 4</p>
+                    <h3 className="mt-1 text-lg font-extrabold text-[#272727]">Required Documents</h3>
+                    <p className="mt-1 text-xs text-[#64748b]">Upload these before submitting the reservation.</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label className="rounded-xl border border-slate-800 bg-slate-950/30 p-4 transition hover:border-emerald-500/40 cursor-pointer">
+                    <span className="flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                      <Upload className="w-4 h-4 text-emerald-400" />
+                      Government ID <span className="text-red-500">*</span>
+                    </span>
+                    <input
+                      type="file"
+                      required
+                      accept=".pdf,image/png,image/jpeg,image/webp"
+                      onChange={(e) => setValidIdFile(e.target.files?.[0] || null)}
+                      className="block w-full text-xs text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-500 file:px-3 file:py-2 file:text-xs file:font-bold file:text-slate-950"
+                    />
+                    <span className="mt-2 block truncate text-[10px] text-slate-500">
+                      {validIdFile ? validIdFile.name : 'PDF, JPG, PNG, or WebP up to 10MB'}
+                    </span>
+                  </label>
+
+                  <label className="rounded-xl border border-slate-800 bg-slate-950/30 p-4 transition hover:border-emerald-500/40 cursor-pointer">
+                    <span className="flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                      <Upload className="w-4 h-4 text-emerald-400" />
+                      Proof of Income <span className="text-red-500">*</span>
+                    </span>
+                    <input
+                      type="file"
+                      required
+                      accept=".pdf,image/png,image/jpeg,image/webp"
+                      onChange={(e) => setIncomeProofFile(e.target.files?.[0] || null)}
+                      className="block w-full text-xs text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-500 file:px-3 file:py-2 file:text-xs file:font-bold file:text-slate-950"
+                    />
+                    <span className="mt-2 block truncate text-[10px] text-slate-500">
+                      {incomeProofFile ? incomeProofFile.name : 'PDF, JPG, PNG, or WebP up to 10MB'}
+                    </span>
+                  </label>
+                  </div>
+                </section>
+
+                <HelpText>Please review your lot, payment amount, contact details, and uploaded files before confirming.</HelpText>
 
                 <div className="pt-4">
                   <label className="flex items-start gap-3 cursor-pointer select-none">
@@ -496,21 +617,21 @@ export default function ReservePropertyPage() {
                       className="mt-1 w-4 h-4 text-emerald-500 border-slate-800 bg-slate-950 rounded outline-none"
                     />
                     <span className="text-xs text-slate-400 leading-normal">
-                      I agree to the iReserve purchase guidelines. I understand this reservation holds the property for **48 Hours** and will automatically expire and release back to available if unpaid or rejected.
+                      I agree to the iReserve purchase guidelines. I understand this reservation holds the property for 48 hours and will automatically expire and release back to available if unpaid or rejected.
                     </span>
                   </label>
                 </div>
 
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || !canSubmitReservation}
                   className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-bold py-3.5 px-4 rounded-xl transition-all duration-200 transform active:scale-[0.98] shadow-lg shadow-emerald-500/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 >
                   {submitting ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
                   ) : (
                     <>
-                      Confirm Reservation Booking
+                      {canSubmitReservation ? 'Review and Confirm Reservation' : 'Complete the Required Steps'}
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}
@@ -518,6 +639,7 @@ export default function ReservePropertyPage() {
               </form>
             )}
           </div>
+        </div>
         </div>
 
         {/* Right Column: Checkout Summary info */}
@@ -532,8 +654,9 @@ export default function ReservePropertyPage() {
               <div className="space-y-4">
                 <div className="flex justify-between items-start text-xs border-b border-slate-900 pb-3">
                   <div>
-                    <span className="font-bold text-slate-200 block">{property.property_code}</span>
-                    <span className="text-[10px] text-slate-500 mt-1 block">Block {property.block_number} Lot {property.lot_number}</span>
+                    <span className="font-bold text-slate-200 block">
+                      Block {property.block_number} Lot {property.lot_number}
+                    </span>
                   </div>
                   <span className="text-[10px] bg-emerald-500/10 text-emerald-400 font-bold px-2 py-0.5 rounded-full select-none uppercase tracking-wide">
                     {property.status}
@@ -583,6 +706,16 @@ export default function ReservePropertyPage() {
       <footer className="border-t border-slate-900 bg-slate-950/20 py-6 text-center text-xs text-slate-600 mt-12">
         <p>© {new Date().getFullYear()} iReserve Reservation Desk. All rights reserved.</p>
       </footer>
+      <ConfirmActionDialog
+        open={confirmReservation}
+        title="Confirm Reservation"
+        message="Please review your details carefully. Once submitted, your selected lot may be temporarily reserved while waiting for payment or document review."
+        cancelLabel="Cancel"
+        confirmLabel="Confirm Reservation"
+        busy={submitting}
+        onCancel={() => setConfirmReservation(false)}
+        onConfirm={handleBookingSubmit}
+      />
     </div>
   );
 }

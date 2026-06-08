@@ -1,7 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import VillageCard from '@/components/public/VillageCard';
+import VillageDirectory from '@/components/public/VillageDirectory';
 import Navbar from '@/components/layout/Navbar';
 import { ArrowLeft, Building } from 'lucide-react';
 
@@ -95,42 +95,34 @@ export default async function VillagesPage() {
   const displayedVillages = villages.length > 0 ? villages : mockVillages;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col relative overflow-hidden">
-      {/* Decorative gradient glowing spheres */}
-      <div className="absolute top-[-25%] left-[-10%] w-[900px] h-[900px] rounded-full bg-emerald-950/10 blur-[150px] pointer-events-none" />
-
+    <div className="min-h-screen bg-[#f8fafc] text-[#272727] flex flex-col">
       <Navbar />
 
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-12 relative z-10">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-10 md:px-8">
         <Link
-          href="/customer/dashboard"
+          href="/"
           className="mb-8 inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-2 text-xs font-bold text-slate-200 shadow transition hover:border-emerald-500/40 hover:bg-emerald-500/10 hover:text-emerald-300"
         >
           <ArrowLeft className="w-4 h-4" />
-          Back to Account
+          Back to Home
         </Link>
 
-        <div className="text-center mb-12">
+        <div className="mb-8">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mb-4 shadow">
             <Building className="w-6 h-6" />
           </div>
-          <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight mb-3">
-            Subdivision Portals
+          <h1 className="mb-3 text-3xl font-extrabold tracking-tight md:text-5xl">
+            Browse Villages and Available Lots
           </h1>
-          <p className="text-slate-400 text-sm max-w-xl mx-auto leading-relaxed">
-            Choose your community and launch visual canvas editors to pick specific parcels.
+          <p className="max-w-2xl text-sm leading-6 text-[#64748b]">
+            Compare locations, prices, and available lots. Select a village to learn more and open its interactive map.
           </p>
         </div>
 
-        {/* Villages Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {displayedVillages.map((village) => (
-            <VillageCard key={village.id} village={village} />
-          ))}
-        </div>
+        <VillageDirectory villages={displayedVillages} />
       </main>
 
-      <footer className="border-t border-slate-900 bg-slate-950/50 py-6 text-center text-xs text-slate-500 mt-12">
+      <footer className="mt-12 border-t border-[#e2e8f0] bg-white py-6 text-center text-xs text-[#64748b]">
         <p>© {new Date().getFullYear()} iReserve Reservation Portal. All rights reserved.</p>
       </footer>
     </div>

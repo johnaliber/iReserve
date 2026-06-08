@@ -6,6 +6,10 @@ import PaymentAmountIndicator from './PaymentAmountIndicator';
 
 export default function PaymentSummaryCard({ plan }) {
   if (!plan) return null;
+  const termMonths = Math.max(1, Number(plan.installment_term_months || 6));
+  const monthlyPayment = Number(plan.monthly_payment || 0) > 0
+    ? Number(plan.monthly_payment)
+    : Number(plan.remaining_balance || 0) / termMonths;
 
   return (
     <div className="space-y-4 rounded-2xl border border-[#e2e8f0] bg-white p-5 shadow-sm">
@@ -18,8 +22,8 @@ export default function PaymentSummaryCard({ plan }) {
         <div><p className="text-[#64748b]">Initial Amount Due</p><p className="font-extrabold text-[#272727]">{formatPeso(plan.initial_amount_due)}</p></div>
         <div><p className="text-[#64748b]">Amount Paid</p><p className="font-extrabold text-[#272727]">{formatPeso(plan.amount_paid)}</p></div>
         <div><p className="text-[#64748b]">Remaining Balance</p><p className="font-extrabold text-[#272727]">{formatPeso(plan.remaining_balance)}</p></div>
-        {plan.monthly_payment && <div><p className="text-[#64748b]">Monthly Payment</p><p className="font-extrabold text-[#272727]">{formatPeso(plan.monthly_payment)}</p></div>}
-        {plan.installment_term_months && <div><p className="text-[#64748b]">Term</p><p className="font-extrabold text-[#272727]">{plan.installment_term_months} months</p></div>}
+        {monthlyPayment > 0 && <div><p className="text-[#64748b]">Monthly Payment</p><p className="font-extrabold text-[#272727]">{formatPeso(monthlyPayment)}</p></div>}
+        {termMonths > 0 && <div><p className="text-[#64748b]">Term</p><p className="font-extrabold text-[#272727]">{termMonths} months</p></div>}
       </div>
       <PaymentAmountIndicator
         paymentType={plan.payment_type}

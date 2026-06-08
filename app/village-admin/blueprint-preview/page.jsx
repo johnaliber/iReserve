@@ -139,7 +139,7 @@ export default function VillageAdminBlueprintPreviewPage() {
               allowDemoFallback={false}
               adminPropertyMode={true}
               adminShowHidden={true}
-              preferDraftBlueprint={true}
+              preferDraftBlueprint={false}
               showSmartAssistant={false}
               onAdminObjectSelect={handleObjectSelect}
             />

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import DashboardShell from '@/components/layout/DashboardShell';
+import AccountConfirmDialog from '@/components/accounts/AccountConfirmDialog';
 import {
   Users,
   Search,
@@ -82,6 +83,7 @@ export default function SuperAdminAccountsPage({
   const [editVillageIds, setEditVillageIds] = useState([]);
   const [editVillageRole, setEditVillageRole] = useState('village_admin');
   const [saving, setSaving] = useState(false);
+  const [confirmSave, setConfirmSave] = useState(false);
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -179,6 +181,7 @@ export default function SuperAdminAccountsPage({
       }
 
       showToast(`${editUser.full_name}'s account updated successfully.`);
+      setConfirmSave(false);
       setEditUser(null);
       fetchData();
     } catch (err) {
@@ -486,7 +489,7 @@ export default function SuperAdminAccountsPage({
                 Cancel
               </button>
               <button
-                onClick={handleSaveEdit}
+                onClick={() => setConfirmSave(true)}
                 disabled={saving}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-5 py-2.5 text-xs font-extrabold text-white shadow-sm transition hover:bg-emerald-500 disabled:opacity-60 cursor-pointer"
               >
@@ -497,6 +500,21 @@ export default function SuperAdminAccountsPage({
           </div>
         </div>
       )}
+
+      <AccountConfirmDialog
+        open={confirmSave && Boolean(editUser)}
+        title="Confirm Account Changes?"
+        description={(
+          <p>
+            Apply the <strong>{getRoleLabel(editRole)}</strong> role and selected village assignments to{' '}
+            <strong>{editUser?.full_name}</strong>?
+          </p>
+        )}
+        confirmLabel="Save Changes"
+        loading={saving}
+        onCancel={() => setConfirmSave(false)}
+        onConfirm={handleSaveEdit}
+      />
 
       {/* Delete Confirmation Modal */}
       {deleteTarget && (

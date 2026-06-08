@@ -1,8 +1,11 @@
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createPaymentPlanForReservation, validatePaymentAmount } from '@/lib/payments/server';
+import { mkdir, writeFile } from 'fs/promises';
+import path from 'path';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 function json(status, payload) {
   return Response.json(payload, { status });
@@ -16,10 +19,66 @@ function fallbackRef() {
   return `REF-${Math.floor(Math.random() * 1000000)}`;
 }
 
+function safeSegment(value, fallback = 'Uploader') {
+  return String(value || fallback)
+    .normalize('NFKD')
+    .replace(/[^\w\s.-]/g, '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, 80) || fallback;
+}
+
+async function readPayload(request) {
+  const contentType = request.headers.get('content-type') || '';
+  if (!contentType.includes('multipart/form-data')) {
+    return {
+      fields: await request.json(),
+      files: {}
+    };
+  }
+
+  const formData = await request.formData();
+  return {
+    fields: Object.fromEntries([...formData.entries()].filter(([, value]) => typeof value === 'string')),
+    files: {
+      validIdFile: formData.get('validIdFile'),
+      incomeProofFile: formData.get('incomeProofFile')
+    }
+  };
+}
+
+async function saveRequiredDocument(file, uploaderName, documentLabel) {
+  if (!(file instanceof File) || file.size === 0) {
+    throw new Error(`${documentLabel} is required before reserving a property.`);
+  }
+
+  const maxBytes = 10 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    throw new Error(`${documentLabel} must be 10MB or smaller.`);
+  }
+
+  const allowedTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
+  if (file.type && !allowedTypes.has(file.type)) {
+    throw new Error(`${documentLabel} must be a PDF, JPG, PNG, or WebP file.`);
+  }
+
+  const safeUploader = safeSegment(uploaderName);
+  const safeOriginalName = safeSegment(file.name || `${documentLabel}.pdf`, `${documentLabel}.pdf`);
+  const fileName = `${Date.now()}-${crypto.randomUUID()}-${safeOriginalName}`;
+  const relativeFolder = path.join('Orchard', safeUploader, 'Documents');
+  const absoluteFolder = path.join(process.cwd(), 'public', relativeFolder);
+
+  await mkdir(absoluteFolder, { recursive: true });
+  const buffer = Buffer.from(await file.arrayBuffer());
+  await writeFile(path.join(absoluteFolder, fileName), buffer);
+
+  return `/${relativeFolder.replaceAll(path.sep, '/')}/${fileName}`;
+}
+
 export async function POST(request) {
   const supabase = await createClient();
   const admin = createAdminClient();
-  const body = await request.json();
+  const { fields: body, files } = await readPayload(request);
 
   const {
     propertyId,
@@ -47,6 +106,22 @@ export async function POST(request) {
 
   if (paymentType === 'installment' && !installmentTermMonths) {
     return json(400, { error: 'Installment term is required for installment payment.' });
+  }
+
+  let savedValidIdUrl = validIdUrl;
+  let savedIncomeProofUrl = incomeProofUrl;
+
+  if (files.validIdFile || files.incomeProofFile) {
+    try {
+      savedValidIdUrl = await saveRequiredDocument(files.validIdFile, fullName, 'Government ID');
+      savedIncomeProofUrl = await saveRequiredDocument(files.incomeProofFile, fullName, 'Proof of Income');
+    } catch (err) {
+      return json(400, { error: err.message || 'Documents could not be uploaded.' });
+    }
+  }
+
+  if (!savedValidIdUrl || !savedIncomeProofUrl) {
+    return json(400, { error: 'Government ID and Proof of Income documents are required before reservation.' });
   }
 
   const {
@@ -95,6 +170,7 @@ export async function POST(request) {
   const reservationFee = property.reservation_fee || 5000;
   const expiresAt = new Date();
   expiresAt.setHours(expiresAt.getHours() + 48);
+  let createdReservationId = null;
 
   try {
     const { data: reservation, error: reservationError } = await admin
@@ -116,6 +192,7 @@ export async function POST(request) {
       .single();
 
     if (reservationError) throw reservationError;
+    createdReservationId = reservation.id;
 
     const paymentPlan = await createPaymentPlanForReservation(admin, {
       reservationId: reservation.id,
@@ -164,14 +241,14 @@ export async function POST(request) {
         reservation_id: reservation.id,
         customer_id: user?.id || null,
         document_type: 'Valid Government ID',
-        file_url: validIdUrl,
+        file_url: savedValidIdUrl,
         status: 'pending'
       },
       {
         reservation_id: reservation.id,
         customer_id: user?.id || null,
         document_type: 'Proof of Income',
-        file_url: incomeProofUrl,
+        file_url: savedIncomeProofUrl,
         status: 'pending'
       }
     ];
@@ -181,6 +258,17 @@ export async function POST(request) {
 
     return json(200, { reservationCode: code, email });
   } catch (err) {
+    if (createdReservationId) {
+      const { error: cleanupError } = await admin
+        .from('reservations')
+        .delete()
+        .eq('id', createdReservationId);
+
+      if (cleanupError) {
+        console.error('Incomplete reservation cleanup failed:', cleanupError);
+      }
+    }
+
     await admin
       .from('properties')
       .update({ status: 'available', updated_at: new Date().toISOString() })

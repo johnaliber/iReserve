@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import DashboardShell from '@/components/layout/DashboardShell';
 import { getManageableVillages } from '@/lib/villages/getManageableVillages';
@@ -186,7 +187,7 @@ export default function VillageAdminReservationsPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-end gap-3">
             <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider select-none">Scope:</span>
             <select
               value={selectedVillageId}

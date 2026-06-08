@@ -1,10 +1,5 @@
-import AdminPlaceholderPage from '@/components/admin/AdminPlaceholderPage';
+import AccountingDashboardPage from '@/app/accounting/dashboard/page';
 
 export default function VillageAdminPaymentsBookingAuditPage() {
-  return (
-    <AdminPlaceholderPage
-      title="Payments / Booking Audit"
-      description="Review payment status and booking audit signals for your assigned village scope."
-    />
-  );
+  return <AccountingDashboardPage />;
 }

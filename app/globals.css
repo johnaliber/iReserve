@@ -215,3 +215,28 @@ button {
 .animate-pulse-slow {
   animation: pulse-slow 8s infinite ease-in-out;
 }
+
+@keyframes ireserve-loader-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ireserve-loader-ring {
+  position: relative;
+}
+
+.ireserve-loader-ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 3px solid #d1fae5;
+  border-top-color: #10b981;
+  animation: ireserve-loader-spin 0.9s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ireserve-loader-ring::before,
+  .animate-pulse-slow {
+    animation: none;
+  }
+}

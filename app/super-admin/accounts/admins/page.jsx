@@ -1,5 +1,11 @@
-import AdminPlaceholderPage from '@/components/admin/AdminPlaceholderPage';
+import SuperAdminAccountsPage from '../page';
 
 export default function AdminAccountsPage() {
-  return <AdminPlaceholderPage title="Admin Accounts" description="Manage village admin access, assignments, and operating scopes." />;
+  return (
+    <SuperAdminAccountsPage
+      defaultRoleFilter="village_admin"
+      pageTitle="Admin Accounts"
+      pageDescription="Manage village admin access, assignments, and operating scopes."
+    />
+  );
 }

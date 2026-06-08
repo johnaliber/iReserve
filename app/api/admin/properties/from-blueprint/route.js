@@ -313,7 +313,7 @@ export async function POST(request) {
 
   const { data: object, error: objectError } = await supabase
     .from('blueprint_objects')
-    .select('id, village_id, linked_property_id')
+    .select('id, village_id, linked_property_id, object_data')
     .eq('id', blueprintObjectId)
     .eq('village_id', villageId)
     .maybeSingle();
@@ -387,7 +387,18 @@ export async function POST(request) {
 
   const { error: linkError } = await supabase
     .from('blueprint_objects')
-    .update({ linked_property_id: savedProperty.id, updated_at: new Date().toISOString() })
+    .update({
+      linked_property_id: savedProperty.id,
+      object_data: {
+        ...(object.object_data || {}),
+        name: savedProperty.property_code,
+        property_code: savedProperty.property_code,
+        phase_number: savedProperty.phase_number,
+        block_number: savedProperty.block_number,
+        lot_number: savedProperty.lot_number
+      },
+      updated_at: new Date().toISOString()
+    })
     .eq('id', blueprintObjectId)
     .eq('village_id', villageId);
 

@@ -1,10 +1,5 @@
-import AdminPlaceholderPage from '@/components/admin/AdminPlaceholderPage';
+import SiteViewingAvailabilitySettings from '@/components/site-viewings/SiteViewingAvailabilitySettings';
 
 export default function VillageAdminSettingsPage() {
-  return (
-    <AdminPlaceholderPage
-      title="Village Settings"
-      description="Manage assigned-village operational preferences, reservation rules, and customer-facing visibility."
-    />
-  );
+  return <SiteViewingAvailabilitySettings />;
 }

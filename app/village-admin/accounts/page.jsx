@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import DashboardShell from '@/components/layout/DashboardShell';
 import { getManageableVillages } from '@/lib/villages/getManageableVillages';
+import AccountConfirmDialog from '@/components/accounts/AccountConfirmDialog';
 import {
   Users,
   Search,
@@ -80,6 +81,7 @@ export default function VillageAdminAccountsPage() {
   const [editUser, setEditUser] = useState(null);
   const [editRole, setEditRole] = useState('');
   const [saving, setSaving] = useState(false);
+  const [confirmSave, setConfirmSave] = useState(false);
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -263,6 +265,7 @@ export default function VillageAdminAccountsPage() {
       }
 
       showToast(`${editUser.full_name}'s role updated to ${getRoleLabel(editRole)}.`);
+      setConfirmSave(false);
       setEditUser(null);
       fetchData(selectedVillageId);
     } catch (err) {
@@ -535,7 +538,7 @@ export default function VillageAdminAccountsPage() {
                 Cancel
               </button>
               <button
-                onClick={handleSaveEdit}
+                onClick={() => setConfirmSave(true)}
                 disabled={saving}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-5 py-2.5 text-xs font-extrabold text-white shadow-sm transition hover:bg-emerald-500 disabled:opacity-60 cursor-pointer"
               >
@@ -546,6 +549,21 @@ export default function VillageAdminAccountsPage() {
           </div>
         </div>
       )}
+
+      <AccountConfirmDialog
+        open={confirmSave && Boolean(editUser)}
+        title="Confirm Account Changes?"
+        description={(
+          <p>
+            Change <strong>{editUser?.full_name}</strong> to <strong>{getRoleLabel(editRole)}</strong> in{' '}
+            <strong>{selectedVillageName}</strong>?
+          </p>
+        )}
+        confirmLabel="Save Changes"
+        loading={saving}
+        onCancel={() => setConfirmSave(false)}
+        onConfirm={handleSaveEdit}
+      />
 
       {/* Delete Confirmation Modal */}
       {deleteTarget && (

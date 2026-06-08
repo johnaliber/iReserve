@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
-export default function PropertyDetailModal({ property, isOpen, onClose }) {
+export default function PropertyDetailModal({ property, isOpen, onClose, showInternalCode = false }) {
   const supabase = createClient();
   const [role, setRole] = useState(null);
 
@@ -97,17 +97,19 @@ export default function PropertyDetailModal({ property, isOpen, onClose }) {
     flood_risk = 'low',
     sunlight_exposure = 'morning',
     status,
-    thumbnail_url
+    thumbnail_url,
+    floor_plan_url
   } = property;
 
   const displayInterestRate = Number(interest_rate || interestRatePerYear || 0);
   const downpaymentAmount = price * (downpaymentPercent / 100);
+  const reserveHref = `/reserve/${id}?downpayment_percentage=${encodeURIComponent(downpaymentPercent)}&loan_term_years=${encodeURIComponent(loanTermYears)}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm transition-opacity">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/70 p-0 backdrop-blur-sm transition-opacity md:items-center md:p-4">
       
       {/* Modal card box */}
-      <div className="w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col md:flex-row relative z-10 glass-card animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] md:max-h-[85vh]">
+      <div className="relative z-10 flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-t-3xl border border-slate-800 bg-slate-900 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200 md:max-h-[88vh] md:flex-row md:rounded-3xl">
         
         {/* Close Button */}
         <button
@@ -131,14 +133,23 @@ export default function PropertyDetailModal({ property, isOpen, onClose }) {
           </div>
 
           <div>
-            <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider block">Property Identifier</span>
+            <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider block">
+              {showInternalCode ? 'Property Identifier' : 'Lot Location'}
+            </span>
             <h3 className="text-2xl font-extrabold text-white mt-0.5">
-              {property_code}
+              {showInternalCode ? property_code : `Block ${block_number}, Lot ${lot_number}`}
             </h3>
             <p className="text-xs text-slate-500 font-medium mt-1">
-              Block {block_number}, Lot {lot_number} • {street_name}
+              {showInternalCode ? `Block ${block_number}, Lot ${lot_number} - ` : ''}{street_name}
             </p>
           </div>
+
+          {floor_plan_url && (
+            <a href={floor_plan_url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl border border-[#e2e8f0] bg-white">
+              <img src={floor_plan_url} alt="Floor plan preview" className="h-36 w-full object-contain" />
+              <span className="block border-t border-[#e2e8f0] px-3 py-2 text-center text-xs font-bold text-emerald-700">View Floor Plan</span>
+            </a>
+          )}
 
           {/* Quick Specs Grid */}
           <div className="grid grid-cols-2 gap-3.5 bg-slate-950/40 border border-slate-900 rounded-xl p-4 text-xs">
@@ -200,6 +211,11 @@ export default function PropertyDetailModal({ property, isOpen, onClose }) {
         {/* 2. Right half: Pricing & Calculator */}
         <div className="flex-1 overflow-y-auto p-6 flex flex-col justify-between space-y-6">
           <div className="space-y-6">
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-600">Lot / House Details</p>
+              <h2 className="mt-1 text-2xl font-extrabold text-[#272727]">Everything you need before reserving</h2>
+              <p className="mt-2 text-sm leading-6 text-[#64748b]">Review the price, size, surroundings, and payment choices below.</p>
+            </div>
             <div className="flex items-end justify-between border-b border-slate-800 pb-4">
               <div>
                 <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Acquisition Price</span>
@@ -276,34 +292,46 @@ export default function PropertyDetailModal({ property, isOpen, onClose }) {
                 </span>
               </div>
             </div>
+
+            <div className="rounded-xl border border-[#e2e8f0] bg-white p-4">
+              <h4 className="text-sm font-extrabold text-[#272727]">Payment Options</h4>
+              <div className="mt-3 space-y-2 text-xs leading-5 text-[#64748b]">
+                <p><strong className="text-[#272727]">Full Payment:</strong> Pay the full property amount.</p>
+                <p><strong className="text-[#272727]">Partial / Downpayment:</strong> Pay a downpayment first.</p>
+                <p><strong className="text-[#272727]">Installment:</strong> Pay monthly based on your selected term.</p>
+              </div>
+            </div>
           </div>
 
           {/* Action CTA */}
-          <div className="flex gap-4">
+          <div className="grid gap-2 sm:grid-cols-3">
             <button
               onClick={onClose}
-              className="flex-1 py-3 border border-slate-800 hover:border-slate-700 text-slate-350 hover:text-white rounded-xl text-xs font-bold transition outline-none cursor-pointer"
+              className="min-h-12 rounded-xl border border-slate-800 px-4 text-xs font-bold transition"
             >
-              Cancel
+              Close
             </button>
+            <Link href={`/customer/site-viewing?property=${id}`} className="flex min-h-12 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-center text-xs font-extrabold text-emerald-700">
+              Schedule Site Viewing
+            </Link>
             
             {status === 'available' ? (
               role && role !== 'customer' ? (
-                <div className="flex-[2] py-3 text-center bg-slate-950 border border-slate-900 text-slate-500 rounded-xl text-xs font-bold uppercase select-none cursor-not-allowed">
+                <div className="flex min-h-12 items-center justify-center rounded-xl border border-slate-900 bg-slate-950 px-4 text-center text-xs font-bold text-slate-500">
                   Staff Account: Reservation Restrict
                 </div>
               ) : (
                 <Link
-                  href={`/reserve/${id}`}
-                  className="flex-[2] flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-bold py-3 px-6 rounded-xl shadow-lg shadow-emerald-500/15 text-xs transition duration-200 transform hover:scale-[1.01] cursor-pointer"
+                  href={reserveHref}
+                  className="flex min-h-12 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-4 text-xs font-extrabold text-white shadow-sm hover:bg-emerald-500"
                 >
                   <Coins className="w-4 h-4" />
-                  Reserve Property Now
+                  Reserve This Lot
                 </Link>
               )
             ) : (
-              <div className="flex-[2] py-3 text-center bg-slate-950 border border-slate-900 text-slate-500 rounded-xl text-xs font-bold uppercase select-none cursor-not-allowed">
-                Property: {status}
+              <div className="flex min-h-12 items-center justify-center rounded-xl border border-amber-200 bg-amber-50 px-4 text-center text-xs font-bold text-amber-800">
+                This lot is currently not available for reservation.
               </div>
             )}
           </div>

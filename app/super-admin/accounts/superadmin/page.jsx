@@ -1,10 +1,11 @@
-import AdminPlaceholderPage from '@/components/admin/AdminPlaceholderPage';
+import SuperAdminAccountsPage from '../page';
 
 export default function SuperadminAccountsPage() {
   return (
-    <AdminPlaceholderPage
-      title="Superadmin Accounts"
-      description="Manage global system administrators with full iReserve access."
+    <SuperAdminAccountsPage
+      defaultRoleFilter="super_admin"
+      pageTitle="Superadmin Accounts"
+      pageDescription="Manage global system administrators with full iReserve access."
     />
   );
 }

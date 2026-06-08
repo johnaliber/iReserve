@@ -1,5 +1,11 @@
-import AdminPlaceholderPage from '@/components/admin/AdminPlaceholderPage';
+import SuperAdminAccountsPage from '../page';
 
 export default function AccountingAccountsPage() {
-  return <AdminPlaceholderPage title="Accounting Accounts" description="Manage accounting users responsible for payment verification and booking audit." />;
+  return (
+    <SuperAdminAccountsPage
+      defaultRoleFilter="accounting"
+      pageTitle="Accounting Accounts"
+      pageDescription="Manage accounting users responsible for payment verification and booking audit."
+    />
+  );
 }

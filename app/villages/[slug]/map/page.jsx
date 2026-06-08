@@ -4,8 +4,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { createClient } from '@/lib/supabase/client';
 import Navbar from '@/components/layout/Navbar';
-import { Building, MapPin, ArrowLeft, Loader2 } from 'lucide-react';
+import { Building, MapPin, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import DelayedLoadingState from '@/components/shared/DelayedLoadingState';
 
 const InteractiveVillageMap = dynamic(() => import('@/components/public/InteractiveVillageMap'), { ssr: false });
 
@@ -63,7 +64,7 @@ export default function VillageMapPage({ params }) {
             <ArrowLeft className="w-4 h-4" />
           </Link>
           <div>
-            <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider block">Subdivision Blueprint View</span>
+            <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider block">Interactive Village Map</span>
             <h1 className="text-xl font-bold text-white mt-0.5 flex items-center gap-1.5">
               <Building className="w-5 h-5 text-emerald-400" />
               {villageName} Map
@@ -80,9 +81,7 @@ export default function VillageMapPage({ params }) {
       {/* 3. Stage viewport */}
       <main className="flex-1 flex flex-col relative z-10 p-6 max-w-7xl mx-auto w-full">
         {loading ? (
-          <div className="flex items-center justify-center min-h-[500px] text-slate-400">
-            <Loader2 className="w-10 h-10 text-emerald-400 animate-spin" />
-          </div>
+          <DelayedLoadingState loading message="Loading available lots..." />
         ) : (
           <InteractiveVillageMap villageSlug={slug} allowDemoFallback={false} />
         )}

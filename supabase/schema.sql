@@ -315,6 +315,72 @@ CREATE TABLE public.site_viewings (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
+CREATE TABLE public.site_viewing_availability (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    village_id UUID NOT NULL REFERENCES public.villages(id) ON DELETE CASCADE,
+    available_date DATE NOT NULL,
+    start_time TIME NOT NULL DEFAULT '08:00',
+    end_time TIME NOT NULL DEFAULT '17:00',
+    daily_capacity INT NOT NULL DEFAULT 8 CHECK (daily_capacity > 0),
+    notes TEXT,
+    created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    UNIQUE (village_id, available_date),
+    CHECK (start_time < end_time)
+);
+
+CREATE INDEX idx_site_viewing_availability_village_date
+    ON public.site_viewing_availability(village_id, available_date);
+
+CREATE OR REPLACE FUNCTION public.validate_site_viewing_availability()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    availability public.site_viewing_availability%ROWTYPE;
+    active_bookings INT;
+BEGIN
+    SELECT *
+    INTO availability
+    FROM public.site_viewing_availability
+    WHERE village_id = NEW.village_id
+      AND available_date = NEW.preferred_date;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'The selected date is not open for site viewing.';
+    END IF;
+
+    IF NEW.preferred_time < availability.start_time
+       OR NEW.preferred_time >= availability.end_time THEN
+        RAISE EXCEPTION 'The selected time is outside the available viewing hours.';
+    END IF;
+
+    SELECT COUNT(*)
+    INTO active_bookings
+    FROM public.site_viewings
+    WHERE village_id = NEW.village_id
+      AND preferred_date = NEW.preferred_date
+      AND status IN ('pending', 'approved')
+      AND (TG_OP = 'INSERT' OR id <> NEW.id);
+
+    IF active_bookings >= availability.daily_capacity THEN
+        RAISE EXCEPTION 'The selected site viewing date is already fully booked.';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER validate_site_viewing_availability_trigger
+    BEFORE INSERT OR UPDATE OF village_id, preferred_date, preferred_time, status
+    ON public.site_viewings
+    FOR EACH ROW
+    WHEN (NEW.status IN ('pending', 'approved'))
+    EXECUTE FUNCTION public.validate_site_viewing_availability();
+
 -- ====================================================
 -- 12. INQUIRIES TABLE
 -- ====================================================
@@ -399,6 +465,7 @@ ALTER TABLE public.payment_schedule ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.site_viewings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.site_viewing_availability ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inquiries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
@@ -531,6 +598,7 @@ CREATE POLICY reservations_guest_insert ON public.reservations FOR INSERT TO pub
 CREATE POLICY payment_plans_super_admin ON public.payment_plans FOR ALL TO authenticated USING (public.is_super_admin());
 CREATE POLICY payment_plans_admin_read ON public.payment_plans FOR SELECT TO authenticated USING (public.has_village_access(village_id));
 CREATE POLICY payment_plans_accounting_all ON public.payment_plans FOR ALL TO authenticated USING (public.has_village_role(village_id, 'accounting'));
+CREATE POLICY payment_plans_village_admin_all ON public.payment_plans FOR ALL TO authenticated USING (public.has_village_role(village_id, 'village_admin')) WITH CHECK (public.has_village_role(village_id, 'village_admin'));
 CREATE POLICY payment_plans_customer_read ON public.payment_plans FOR SELECT TO authenticated USING (customer_id = auth.uid());
 
 -- --- payment_schedule POLICIES ---
@@ -541,6 +609,11 @@ CREATE POLICY payment_schedule_admin_read ON public.payment_schedule FOR SELECT 
 CREATE POLICY payment_schedule_accounting_all ON public.payment_schedule FOR ALL TO authenticated USING (
     EXISTS (SELECT 1 FROM public.payment_plans WHERE id = payment_plan_id AND public.has_village_role(village_id, 'accounting'))
 );
+CREATE POLICY payment_schedule_village_admin_all ON public.payment_schedule FOR ALL TO authenticated USING (
+    EXISTS (SELECT 1 FROM public.payment_plans WHERE id = payment_plan_id AND public.has_village_role(village_id, 'village_admin'))
+) WITH CHECK (
+    EXISTS (SELECT 1 FROM public.payment_plans WHERE id = payment_plan_id AND public.has_village_role(village_id, 'village_admin'))
+);
 CREATE POLICY payment_schedule_customer_read ON public.payment_schedule FOR SELECT TO authenticated USING (
     EXISTS (SELECT 1 FROM public.payment_plans WHERE id = payment_plan_id AND customer_id = auth.uid())
 );
@@ -548,6 +621,7 @@ CREATE POLICY payment_schedule_customer_read ON public.payment_schedule FOR SELE
 -- --- payments POLICIES ---
 CREATE POLICY payments_super_admin ON public.payments FOR ALL TO authenticated USING (public.is_super_admin());
 CREATE POLICY payments_accounting_all ON public.payments FOR ALL TO authenticated USING (public.has_village_role(village_id, 'accounting'));
+CREATE POLICY payments_village_admin_all ON public.payments FOR ALL TO authenticated USING (public.has_village_role(village_id, 'village_admin')) WITH CHECK (public.has_village_role(village_id, 'village_admin'));
 CREATE POLICY payments_customer_all ON public.payments FOR SELECT TO authenticated USING (customer_id = auth.uid());
 CREATE POLICY payments_customer_insert ON public.payments FOR INSERT TO authenticated WITH CHECK (customer_id = auth.uid());
 
@@ -563,6 +637,11 @@ CREATE POLICY site_viewings_super_admin ON public.site_viewings FOR ALL TO authe
 CREATE POLICY site_viewings_admin_all ON public.site_viewings FOR ALL TO authenticated USING (public.has_village_role(village_id, 'village_admin'));
 CREATE POLICY site_viewings_customer_all ON public.site_viewings FOR ALL TO authenticated USING (customer_id = auth.uid());
 CREATE POLICY site_viewings_guest_insert ON public.site_viewings FOR INSERT TO public WITH CHECK (customer_id IS NULL);
+
+-- --- site_viewing_availability POLICIES ---
+CREATE POLICY site_viewing_availability_read_authenticated ON public.site_viewing_availability FOR SELECT TO authenticated USING (TRUE);
+CREATE POLICY site_viewing_availability_super_admin ON public.site_viewing_availability FOR ALL TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
+CREATE POLICY site_viewing_availability_village_admin ON public.site_viewing_availability FOR ALL TO authenticated USING (public.has_village_role(village_id, 'village_admin')) WITH CHECK (public.has_village_role(village_id, 'village_admin'));
 
 -- --- inquiries POLICIES ---
 CREATE POLICY inquiries_super_admin ON public.inquiries FOR ALL TO authenticated USING (public.is_super_admin());
@@ -592,9 +671,72 @@ CREATE POLICY refunds_customer_read ON public.refunds FOR SELECT TO authenticate
 -- TRIGGERS TO SYNC PROFILES AND STAMP TIMESTAMPS
 -- ====================================================
 
+CREATE OR REPLACE FUNCTION public.claim_guest_reservations_for_user(
+    p_user_id UUID,
+    p_email TEXT
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    claimed_ids UUID[];
+BEGIN
+    IF p_user_id IS NULL OR NULLIF(BTRIM(p_email), '') IS NULL THEN
+        RETURN 0;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM public.profiles
+        WHERE id = p_user_id AND role = 'customer'
+    ) THEN
+        RETURN 0;
+    END IF;
+
+    SELECT ARRAY_AGG(id)
+    INTO claimed_ids
+    FROM public.reservations
+    WHERE customer_id IS NULL
+      AND LOWER(BTRIM(guest_email)) = LOWER(BTRIM(p_email));
+
+    IF COALESCE(CARDINALITY(claimed_ids), 0) = 0 THEN
+        RETURN 0;
+    END IF;
+
+    UPDATE public.reservations
+    SET customer_id = p_user_id, updated_at = TIMEZONE('utc'::text, NOW())
+    WHERE id = ANY(claimed_ids) AND customer_id IS NULL;
+
+    UPDATE public.payment_plans
+    SET customer_id = p_user_id, updated_at = TIMEZONE('utc'::text, NOW())
+    WHERE reservation_id = ANY(claimed_ids) AND customer_id IS NULL;
+
+    UPDATE public.payments
+    SET customer_id = p_user_id, updated_at = TIMEZONE('utc'::text, NOW())
+    WHERE reservation_id = ANY(claimed_ids) AND customer_id IS NULL;
+
+    UPDATE public.documents
+    SET customer_id = p_user_id
+    WHERE reservation_id = ANY(claimed_ids) AND customer_id IS NULL;
+
+    UPDATE public.site_viewings
+    SET customer_id = p_user_id, updated_at = TIMEZONE('utc'::text, NOW())
+    WHERE reservation_id = ANY(claimed_ids) AND customer_id IS NULL;
+
+    RETURN CARDINALITY(claimed_ids);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.claim_guest_reservations_for_user(UUID, TEXT) FROM PUBLIC;
+
 -- 1. Sync public.profiles on new Auth signups
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER SECURITY DEFINER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
   INSERT INTO public.profiles (id, full_name, email, role, avatar_url)
   VALUES (
@@ -608,10 +750,81 @@ BEGIN
   SET full_name = EXCLUDED.full_name,
       email = EXCLUDED.email,
       avatar_url = EXCLUDED.avatar_url;
+
+  PERFORM public.claim_guest_reservations_for_user(new.id, new.email);
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 CREATE OR REPLACE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+CREATE OR REPLACE FUNCTION public.sync_property_status_from_reservations(
+    p_property_id UUID
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    current_status TEXT;
+    resolved_status TEXT;
+BEGIN
+    IF p_property_id IS NULL THEN RETURN; END IF;
+
+    SELECT status INTO current_status
+    FROM public.properties
+    WHERE id = p_property_id;
+
+    IF current_status IS NULL OR current_status IN ('under_maintenance', 'hidden') THEN
+        RETURN;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM public.reservations
+        WHERE property_id = p_property_id AND status = 'converted_to_sale'
+    ) THEN
+        resolved_status := 'sold';
+    ELSIF EXISTS (
+        SELECT 1 FROM public.reservations
+        WHERE property_id = p_property_id
+          AND status IN ('pending_payment', 'pending_documents', 'pending_verification', 'reserved', 'approved')
+    ) THEN
+        resolved_status := 'reserved';
+    ELSE
+        resolved_status := 'available';
+    END IF;
+
+    UPDATE public.properties
+    SET status = resolved_status,
+        updated_at = TIMEZONE('utc'::text, NOW())
+    WHERE id = p_property_id
+      AND status IS DISTINCT FROM resolved_status;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.handle_reservation_property_status()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        PERFORM public.sync_property_status_from_reservations(OLD.property_id);
+        RETURN OLD;
+    END IF;
+
+    PERFORM public.sync_property_status_from_reservations(NEW.property_id);
+    IF TG_OP = 'UPDATE' AND OLD.property_id IS DISTINCT FROM NEW.property_id THEN
+        PERFORM public.sync_property_status_from_reservations(OLD.property_id);
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER sync_property_status_after_reservation_change
+AFTER INSERT OR UPDATE OF status, property_id OR DELETE ON public.reservations
+FOR EACH ROW EXECUTE FUNCTION public.handle_reservation_property_status();
