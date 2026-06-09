@@ -19,6 +19,7 @@ import {
   Navigation
 } from 'lucide-react';
 import Link from 'next/link';
+import { calculatePaymentPlan } from '@/lib/payments/paymentMath';
 
 export default function PropertyDetailModal({ property, isOpen, onClose, showInternalCode = false }) {
   const supabase = createClient();
@@ -56,25 +57,6 @@ export default function PropertyDetailModal({ property, isOpen, onClose, showInt
 
   if (!isOpen || !property) return null;
 
-  const interestRatePerYear = Number(property.interest_rate ?? 0);
-  const principalPrice = property.price || 4500000;
-  const downpaymentAmountVal = principalPrice * (downpaymentPercent / 100);
-  const loanAmountVal = principalPrice - downpaymentAmountVal;
-  
-  const monthlyInterestRate = (interestRatePerYear / 12) / 100;
-  const totalPaymentsCount = loanTermYears * 12;
-
-  let monthlyAmortization = 0;
-  if (totalPaymentsCount > 0) {
-    if (monthlyInterestRate === 0) {
-      monthlyAmortization = loanAmountVal / totalPaymentsCount;
-    } else {
-      // Standard PMT amortization formula
-      monthlyAmortization = (loanAmountVal * monthlyInterestRate * Math.pow(1 + monthlyInterestRate, totalPaymentsCount)) / 
-                  (Math.pow(1 + monthlyInterestRate, totalPaymentsCount) - 1);
-    }
-  }
-
   const {
     id,
     property_code,
@@ -101,8 +83,17 @@ export default function PropertyDetailModal({ property, isOpen, onClose, showInt
     floor_plan_url
   } = property;
 
-  const displayInterestRate = Number(interest_rate || interestRatePerYear || 0);
+  const displayInterestRate = Number(interest_rate || 0);
   const downpaymentAmount = price * (downpaymentPercent / 100);
+  const estimate = calculatePaymentPlan({
+    propertyPrice: price,
+    reservationFee: reservation_fee,
+    paymentType: 'installment',
+    downpaymentPercentage: downpaymentPercent,
+    installmentTermMonths: loanTermYears * 12,
+    interestRate: displayInterestRate
+  });
+  const monthlyAmortization = estimate.monthlyPayment;
   const reserveHref = `/reserve/${id}?downpayment_percentage=${encodeURIComponent(downpaymentPercent)}&loan_term_years=${encodeURIComponent(loanTermYears)}`;
 
   return (
@@ -224,6 +215,7 @@ export default function PropertyDetailModal({ property, isOpen, onClose, showInt
               <div className="text-right">
                 <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Hold Fee</span>
                 <span className="text-base font-bold text-emerald-400">₱{reservation_fee.toLocaleString()}</span>
+                <span className="block text-[9px] font-bold text-emerald-500">Applied to downpayment</span>
               </div>
             </div>
 

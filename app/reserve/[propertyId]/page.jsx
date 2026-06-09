@@ -7,6 +7,7 @@ import {
   Building, 
   Coins, 
   User, 
+  ArrowLeft,
   ArrowRight,
   CheckCircle2,
   Loader2,
@@ -273,6 +274,14 @@ export default function ReservePropertyPage() {
       <Navbar />
 
       <main className="relative z-10 mx-auto w-full max-w-6xl flex-1 px-4 py-8">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="mb-5 inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#dbe4ee] bg-white px-4 text-xs font-extrabold text-[#475569] shadow-sm transition hover:border-emerald-200 hover:text-emerald-700"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </button>
         <ReservationProgressSteps currentStep={2} />
         <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-3">
         
@@ -411,8 +420,11 @@ export default function ReservePropertyPage() {
                         </p>
                       </div>
                       <div className="rounded-lg border border-emerald-200 bg-white px-4 py-3 text-left md:text-right">
-                        <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#64748b]">Downpayment Amount</p>
-                        <p className="text-lg font-extrabold text-emerald-600">{formatPeso(checkoutPlan.downpaymentAmount)}</p>
+                        <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#64748b]">Remaining Downpayment</p>
+                        <p className="text-lg font-extrabold text-emerald-600">{formatPeso(checkoutPlan.remainingDownpayment)}</p>
+                        <p className="mt-1 text-[10px] font-bold text-emerald-700">
+                          Reservation fee applied to downpayment
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -640,10 +652,10 @@ export default function ReservePropertyPage() {
             )}
           </div>
         </div>
-        </div>
 
         {/* Right Column: Checkout Summary info */}
-        <div className="space-y-6">
+        <div className="space-y-6 lg:col-span-1">
+          <div className="lg:sticky lg:top-24">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative glass-card">
             <h3 className="text-lg font-bold text-slate-200 mb-4 border-b border-slate-850 pb-2 flex items-center gap-1.5">
               <Building className="w-4.5 h-4.5 text-emerald-400" />
@@ -699,6 +711,8 @@ export default function ReservePropertyPage() {
               <span>SSL Secure reservation checkout.</span>
             </div>
           </div>
+          </div>
+        </div>
         </div>
 
       </main>

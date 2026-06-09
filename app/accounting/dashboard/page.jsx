@@ -127,6 +127,8 @@ export default function AccountingDashboardPage() {
   const [scopeError, setScopeError] = useState('');
   const [payments, setPayments] = useState([]);
   const [accountPlans, setAccountPlans] = useState([]);
+  const [documents, setDocuments] = useState([]);
+  const [reviewingDocumentId, setReviewingDocumentId] = useState(null);
   const [notifyingPlanId, setNotifyingPlanId] = useState(null);
   const [cashPlan, setCashPlan] = useState(null);
   const [cashAmount, setCashAmount] = useState('');
@@ -137,6 +139,7 @@ export default function AccountingDashboardPage() {
   // Filtering states
   const [statusFilter, setStatusFilter] = useState('');
   const [methodFilter, setMethodFilter] = useState('');
+  const [customerFilter, setCustomerFilter] = useState('');
 
   // Audit Dialog state
   const [selectedPayment, setSelectedPayment] = useState(null);
@@ -149,6 +152,7 @@ export default function AccountingDashboardPage() {
     if (!villageId) {
       setPayments([]);
       setAccountPlans([]);
+      setDocuments([]);
       setLoading(false);
       return;
     }
@@ -168,21 +172,34 @@ export default function AccountingDashboardPage() {
         .eq('village_id', villageId)
         .order('created_at', { ascending: false });
 
-      const [{ data: paymentRows, error: paymentsError }, { data: planRows, error: plansError }] = await Promise.all([
+      const documentsQuery = supabase
+        .from('documents')
+        .select('*, reservations(*, profiles(full_name, email), properties(*, villages(*)))')
+        .order('uploaded_at', { ascending: false });
+
+      const [
+        { data: paymentRows, error: paymentsError },
+        { data: planRows, error: plansError },
+        { data: documentRows, error: documentsError }
+      ] = await Promise.all([
         paymentsQuery,
-        plansQuery
+        plansQuery,
+        documentsQuery
       ]);
 
       if (paymentsError) throw paymentsError;
       if (plansError) throw plansError;
+      if (documentsError) throw documentsError;
 
       setPayments(paymentRows || []);
       setAccountPlans(planRows || []);
+      setDocuments((documentRows || []).filter((document) => document.reservations?.properties?.village_id === villageId));
     } catch (err) {
       console.error('Error fetching accounting dashboard data:', err);
       setScopeError(err.message || 'Payment audit data could not be loaded.');
       setPayments([]);
       setAccountPlans([]);
+      setDocuments([]);
     } finally {
       setLoading(false);
     }
@@ -211,6 +228,35 @@ export default function AccountingDashboardPage() {
       alert(err.message || 'Customer notification failed.');
     } finally {
       setNotifyingPlanId(null);
+    }
+  };
+
+  const handleReviewDocument = async (document, status) => {
+    const rejectionReason = status === 'rejected'
+      ? window.prompt('Why is this document being rejected?')
+      : '';
+
+    if (status === 'rejected' && !rejectionReason?.trim()) return;
+
+    setReviewingDocumentId(document.id);
+    try {
+      const response = await fetch('/api/accounting/documents/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId: document.id,
+          status,
+          rejectionReason
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Document review failed.');
+
+      await fetchPayments(selectedVillageId);
+    } catch (err) {
+      alert(err.message || 'Document review failed.');
+    } finally {
+      setReviewingDocumentId(null);
     }
   };
 
@@ -353,11 +399,73 @@ export default function AccountingDashboardPage() {
 
   const displayedPayments = payments;
 
+  const getPaymentCustomerKey = (payment) => {
+    const reservation = payment?.reservations || {};
+    return reservation.profiles?.id || payment?.customer_id || reservation.guest_email || reservation.guest_name || 'guest';
+  };
+
+  const getPlanCustomerKey = (plan) => {
+    const reservation = plan?.reservations || {};
+    return reservation.profiles?.id || plan?.customer_id || reservation.guest_email || reservation.guest_name || 'guest';
+  };
+
+  const getDocumentCustomerKey = (document) => {
+    const reservation = document?.reservations || {};
+    return reservation.profiles?.id || document?.customer_id || reservation.guest_email || reservation.guest_name || 'guest';
+  };
+
+  const customerOptions = useMemo(() => {
+    const options = new Map();
+
+    displayedPayments.forEach((payment) => {
+      const reservation = payment.reservations || {};
+      const key = getPaymentCustomerKey(payment);
+      options.set(key, {
+        key,
+        name: reservation.profiles?.full_name || reservation.guest_name || 'Guest Buyer',
+        email: reservation.profiles?.email || reservation.guest_email || ''
+      });
+    });
+
+    accountPlans.forEach((plan) => {
+      const reservation = plan.reservations || {};
+      const key = getPlanCustomerKey(plan);
+      options.set(key, {
+        key,
+        name: reservation.profiles?.full_name || reservation.guest_name || 'Guest Buyer',
+        email: reservation.profiles?.email || reservation.guest_email || ''
+      });
+    });
+
+    documents.forEach((document) => {
+      const reservation = document.reservations || {};
+      const key = getDocumentCustomerKey(document);
+      options.set(key, {
+        key,
+        name: reservation.profiles?.full_name || reservation.guest_name || 'Guest Buyer',
+        email: reservation.profiles?.email || reservation.guest_email || ''
+      });
+    });
+
+    return [...options.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [displayedPayments, accountPlans, documents]);
+
   // Filter payments
   const filteredPayments = displayedPayments.filter((p) => {
     if (statusFilter && p.payment_status !== statusFilter) return false;
     if (methodFilter && p.payment_method !== methodFilter) return false;
+    if (customerFilter && getPaymentCustomerKey(p) !== customerFilter) return false;
     return true;
+  });
+
+  const filteredAccountPlans = accountPlans.filter((plan) => {
+    if (!customerFilter) return true;
+    return getPlanCustomerKey(plan) === customerFilter;
+  });
+
+  const filteredDocuments = documents.filter((document) => {
+    if (!customerFilter) return true;
+    return getDocumentCustomerKey(document) === customerFilter;
   });
 
   // Export Sales ledger to CSV
@@ -385,9 +493,9 @@ export default function AccountingDashboardPage() {
     a.click();
   };
 
-  const pendingCount = displayedPayments.filter(p => p.payment_status === 'pending_verification').length;
-  const verifiedCount = displayedPayments.filter(p => p.payment_status === 'verified').length;
-  const totalCollections = displayedPayments.filter(p => p.payment_status === 'verified').reduce((acc, curr) => acc + curr.amount, 0);
+  const pendingCount = filteredPayments.filter(p => p.payment_status === 'pending_verification').length;
+  const verifiedCount = filteredPayments.filter(p => p.payment_status === 'verified').length;
+  const totalCollections = filteredPayments.filter(p => p.payment_status === 'verified').reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
 
   return (
     <DashboardShell>
@@ -417,6 +525,7 @@ export default function AccountingDashboardPage() {
                   setSelectedVillageId(event.target.value);
                   setStatusFilter('');
                   setMethodFilter('');
+                  setCustomerFilter('');
                 }}
                 disabled={villages.length === 0}
                 className="min-w-64 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs font-bold normal-case tracking-normal text-slate-200 outline-none focus:border-emerald-500/50 disabled:opacity-50"
@@ -513,6 +622,126 @@ export default function AccountingDashboardPage() {
             <option value="maya">Maya Account</option>
             <option value="bank_transfer">Bank Wire</option>
           </select>
+
+          <select
+            value={customerFilter}
+            onChange={(e) => setCustomerFilter(e.target.value)}
+            className="min-w-56 bg-slate-950/60 border border-slate-800 rounded-lg py-1.5 px-3 text-xs text-slate-350 outline-none cursor-pointer"
+          >
+            <option value="">All Customers</option>
+            {customerOptions.map((customer) => (
+              <option key={customer.key} value={customer.key}>
+                {customer.name}{customer.email ? ` - ${customer.email}` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Customer Documents Review */}
+        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 glass-card space-y-4">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                <FileCheck className="w-4.5 h-4.5 text-emerald-400" />
+                Customer Documents Approval
+              </h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Approve required documents before verifying a customer&apos;s first payment.
+              </p>
+            </div>
+            <span className="rounded-full border border-slate-800 bg-slate-950/50 px-3 py-1 text-[10px] font-extrabold uppercase text-slate-500">
+              {filteredDocuments.filter((document) => document.status === 'pending').length} pending
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px] text-left text-xs font-medium border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-500 select-none">
+                  <th className="py-3 px-2">Customer</th>
+                  <th className="py-3 px-2">Document</th>
+                  <th className="py-3 px-2">Property</th>
+                  <th className="py-3 px-2">Uploaded</th>
+                  <th className="py-3 px-2">Status</th>
+                  <th className="py-3 px-2 text-right">Review Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/50 text-slate-300">
+                {filteredDocuments.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="py-10 text-center text-xs font-semibold text-slate-500">
+                      No customer documents found for this filter.
+                    </td>
+                  </tr>
+                )}
+
+                {filteredDocuments.map((document) => {
+                  const reservation = document.reservations || {};
+                  const property = reservation.properties || {};
+                  return (
+                    <tr key={document.id} className="hover:bg-slate-950/20 transition-colors">
+                      <td className="py-3.5 px-2">
+                        <span className="block font-bold text-slate-200">{reservation.profiles?.full_name || reservation.guest_name || 'Guest Buyer'}</span>
+                        <span className="text-[10px] text-slate-500">{reservation.profiles?.email || reservation.guest_email || 'No email'}</span>
+                      </td>
+                      <td className="py-3.5 px-2">
+                        <a href={document.file_url} target="_blank" rel="noreferrer" className="font-bold text-emerald-400 hover:text-emerald-300">
+                          {document.document_type}
+                        </a>
+                        {document.rejection_reason && <span className="mt-1 block text-[10px] text-red-400">{document.rejection_reason}</span>}
+                      </td>
+                      <td className="py-3.5 px-2">
+                        <span className="block text-slate-200">{property.villages?.name || 'Village'}</span>
+                        <span className="text-[10px] text-slate-500">Block {property.block_number || '-'} Lot {property.lot_number || '-'}</span>
+                      </td>
+                      <td className="py-3.5 px-2 text-slate-500">
+                        {document.uploaded_at ? new Date(document.uploaded_at).toLocaleDateString('en-PH') : '-'}
+                      </td>
+                      <td className="py-3.5 px-2">
+                        <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded border ${
+                          document.status === 'approved'
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            : document.status === 'rejected'
+                              ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                              : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                        }`}>
+                          {document.status}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-2 text-right">
+                        {document.status === 'pending' ? (
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              disabled={reviewingDocumentId === document.id}
+                              onClick={() => handleReviewDocument(document, 'approved')}
+                              className="inline-flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-1.5 text-[10px] font-extrabold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              disabled={reviewingDocumentId === document.id}
+                              onClick={() => handleReviewDocument(document, 'rejected')}
+                              className="inline-flex items-center gap-1 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-1.5 text-[10px] font-extrabold text-red-400 transition hover:bg-red-500/20 disabled:opacity-50"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                              Reject
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-slate-500 font-semibold select-none italic">
+                            Reviewed
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Audit Ledger Table */}
@@ -605,7 +834,7 @@ export default function AccountingDashboardPage() {
               </p>
             </div>
             <span className="rounded-full border border-slate-800 bg-slate-950/50 px-3 py-1 text-[10px] font-extrabold uppercase text-slate-500">
-              {accountPlans.length} accounts
+              {filteredAccountPlans.length} accounts
             </span>
           </div>
 
@@ -624,7 +853,7 @@ export default function AccountingDashboardPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/50 text-slate-300">
-                {accountPlans.length === 0 && (
+                {filteredAccountPlans.length === 0 && (
                   <tr>
                     <td colSpan={8} className="py-10 text-center text-xs font-semibold text-slate-500">
                       No customer account ledgers found yet.
@@ -632,7 +861,7 @@ export default function AccountingDashboardPage() {
                   </tr>
                 )}
 
-                {accountPlans.map((plan) => {
+                {filteredAccountPlans.map((plan) => {
                   const status = getLedgerStatus(plan);
                   const reservation = plan.reservations || {};
                   const property = reservation.properties || {};

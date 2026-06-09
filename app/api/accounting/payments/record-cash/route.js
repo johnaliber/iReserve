@@ -61,6 +61,15 @@ export async function POST(request) {
     return json(403, { error: 'You do not have payment access to this village.' });
   }
 
+  const { data: documents } = await admin
+    .from('documents')
+    .select('status')
+    .eq('reservation_id', plan.reservation_id);
+
+  if (!documents?.length || documents.some((document) => document.status !== 'approved')) {
+    return json(409, { error: 'Approve the customer documents before recording this payment.' });
+  }
+
   let schedule = null;
   if (paymentScheduleId) {
     const { data: scheduleRow, error: scheduleError } = await admin

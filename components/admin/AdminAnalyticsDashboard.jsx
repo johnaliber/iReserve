@@ -123,6 +123,7 @@ function KpiCard({ title, value, icon: Icon, accent = 'emerald', sub }) {
 export default function AdminAnalyticsDashboard({ scope = 'global' }) {
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
+  const [selectedVillageId, setSelectedVillageId] = useState('');
   const [period, setPeriod] = useState('monthly');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -221,20 +222,40 @@ export default function AdminAnalyticsDashboard({ scope = 'global' }) {
     return () => clearTimeout(timer);
   }, [fetchDashboardData]);
 
+  const effectiveVillageId = data.villages.some((village) => village.id === selectedVillageId)
+    ? selectedVillageId
+    : '';
+  const dashboardData = useMemo(() => {
+    if (!effectiveVillageId) return data;
+
+    const reservations = data.reservations.filter((reservation) => reservation.village_id === effectiveVillageId);
+    const reservationIds = new Set(reservations.map((reservation) => reservation.id));
+
+    return {
+      ...data,
+      villages: data.villages.filter((village) => village.id === effectiveVillageId),
+      properties: data.properties.filter((property) => property.village_id === effectiveVillageId),
+      reservations,
+      payments: data.payments.filter((payment) => payment.village_id === effectiveVillageId),
+      viewings: data.viewings.filter((viewing) => viewing.village_id === effectiveVillageId),
+      refunds: data.refunds.filter((refund) => reservationIds.has(refund.reservation_id))
+    };
+  }, [data, effectiveVillageId]);
+
   const customerById = useMemo(() => new Map(data.customers.map((customer) => [customer.id, customer])), [data.customers]);
-  const verifiedRevenue = data.payments
+  const verifiedRevenue = dashboardData.payments
     .filter((payment) => payment.payment_status === 'verified')
     .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-  const soldLots = data.properties.filter((property) => property.status === 'sold');
-  const pendingReservations = data.reservations.filter((reservation) => reservation.status?.startsWith('pending')).length;
-  const approvedReservations = data.reservations.filter((reservation) => ['approved', 'reserved'].includes(reservation.status)).length;
-  const pendingPayments = data.payments.filter((payment) => ['unpaid', 'pending_verification', 'overdue'].includes(payment.payment_status)).length;
-  const pendingViewings = data.viewings.filter((viewing) => viewing.status === 'pending').length;
-  const refundRequests = data.refunds.filter((refund) => ['requested', 'approved'].includes(refund.status)).length;
+  const soldLots = dashboardData.properties.filter((property) => property.status === 'sold');
+  const pendingReservations = dashboardData.reservations.filter((reservation) => reservation.status?.startsWith('pending')).length;
+  const approvedReservations = dashboardData.reservations.filter((reservation) => ['approved', 'reserved'].includes(reservation.status)).length;
+  const pendingPayments = dashboardData.payments.filter((payment) => ['unpaid', 'pending_verification', 'overdue'].includes(payment.payment_status)).length;
+  const pendingViewings = dashboardData.viewings.filter((viewing) => viewing.status === 'pending').length;
+  const refundRequests = dashboardData.refunds.filter((refund) => ['requested', 'approved'].includes(refund.status)).length;
 
   const salesData = useMemo(() => {
     const grouped = new Map();
-    data.payments
+    dashboardData.payments
       .filter((payment) => payment.payment_status === 'verified')
       .forEach((payment) => {
         const key = periodKey(payment.created_at, period);
@@ -244,29 +265,29 @@ export default function AdminAnalyticsDashboard({ scope = 'global' }) {
         grouped.set(key, current);
       });
     return Array.from(grouped.values()).slice(-12);
-  }, [data.payments, period]);
+  }, [dashboardData.payments, period]);
 
   const villagePerformance = useMemo(() => {
-    return data.villages.map((village) => {
-      const villagePayments = data.payments.filter((payment) => payment.village_id === village.id && payment.payment_status === 'verified');
+    return dashboardData.villages.map((village) => {
+      const villagePayments = dashboardData.payments.filter((payment) => payment.village_id === village.id && payment.payment_status === 'verified');
       return {
         village: village.name,
         revenue: villagePayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
-        reservations: data.reservations.filter((reservation) => reservation.village_id === village.id).length,
-        soldLots: data.properties.filter((property) => property.village_id === village.id && property.status === 'sold').length
+        reservations: dashboardData.reservations.filter((reservation) => reservation.village_id === village.id).length,
+        soldLots: dashboardData.properties.filter((property) => property.village_id === village.id && property.status === 'sold').length
       };
     }).sort((a, b) => b.revenue - a.revenue).slice(0, 8);
-  }, [data]);
+  }, [dashboardData]);
 
   const lotAvailability = [
-    { name: 'Available', value: data.properties.filter((p) => p.status === 'available').length, color: '#10b981' },
-    { name: 'Reserved', value: data.properties.filter((p) => p.status === 'reserved').length, color: '#3b82f6' },
+    { name: 'Available', value: dashboardData.properties.filter((p) => p.status === 'available').length, color: '#10b981' },
+    { name: 'Reserved', value: dashboardData.properties.filter((p) => p.status === 'reserved').length, color: '#3b82f6' },
     { name: 'Sold', value: soldLots.length, color: '#8b5cf6' },
-    { name: 'Under Construction', value: data.properties.filter((p) => p.status === 'under_maintenance').length, color: '#f59e0b' },
-    { name: 'Not Available', value: data.properties.filter((p) => p.status === 'hidden').length, color: '#64748b' }
+    { name: 'Under Construction', value: dashboardData.properties.filter((p) => p.status === 'under_maintenance').length, color: '#f59e0b' },
+    { name: 'Not Available', value: dashboardData.properties.filter((p) => p.status === 'hidden').length, color: '#64748b' }
   ];
 
-  const filteredReservations = data.reservations.filter((reservation) => {
+  const filteredReservations = dashboardData.reservations.filter((reservation) => {
     const property = reservation.properties || {};
     const customer = customerById.get(reservation.customer_id);
     const text = [
@@ -309,14 +330,34 @@ export default function AdminAnalyticsDashboard({ scope = 'global' }) {
               Monitor villages, inventory, reservations, payments, approvals, and sales performance from one operational command center.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={fetchDashboardData}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#dbe4ee] bg-white px-4 py-2.5 text-sm font-bold text-[#272727] shadow-sm transition hover:bg-[#f8fafc]"
-          >
-            <RefreshCcw className="h-4 w-4 text-emerald-600" />
-            Refresh
-          </button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="text-xs font-extrabold uppercase tracking-wider text-[#64748b]">
+              <span className="mb-1.5 block">Village Community</span>
+              <select
+                value={effectiveVillageId}
+                onChange={(event) => {
+                  setSelectedVillageId(event.target.value);
+                  setPage(1);
+                }}
+                className={`${inputClass} min-w-60 normal-case font-bold tracking-normal`}
+              >
+                <option value="">
+                  {scope === 'village' ? 'All Assigned Villages' : 'All Village Communities'}
+                </option>
+                {data.villages.map((village) => (
+                  <option key={village.id} value={village.id}>{village.name}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={fetchDashboardData}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#dbe4ee] bg-white px-4 py-2.5 text-sm font-bold text-[#272727] shadow-sm transition hover:bg-[#f8fafc]"
+            >
+              <RefreshCcw className="h-4 w-4 text-emerald-600" />
+              Refresh
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
@@ -465,7 +506,7 @@ export default function AdminAnalyticsDashboard({ scope = 'global' }) {
                 {paginatedReservations.map((reservation) => {
                   const property = reservation.properties || {};
                   const customer = customerById.get(reservation.customer_id);
-                  const latestPayment = data.payments.find((payment) => payment.reservation_id === reservation.id);
+                  const latestPayment = dashboardData.payments.find((payment) => payment.reservation_id === reservation.id);
                   return (
                     <tr key={reservation.id} className="transition hover:bg-[#f8fafc]">
                       <td className="px-3 py-4 font-mono text-xs font-bold text-[#272727]">{reservation.reservation_code}</td>

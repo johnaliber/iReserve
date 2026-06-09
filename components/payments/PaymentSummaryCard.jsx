@@ -10,6 +10,9 @@ export default function PaymentSummaryCard({ plan }) {
   const monthlyPayment = Number(plan.monthly_payment || 0) > 0
     ? Number(plan.monthly_payment)
     : Number(plan.remaining_balance || 0) / termMonths;
+  const totalPaymentDue = Number(plan.amount_paid || 0) + Number(plan.remaining_balance || 0);
+  const requiredDownpayment = Number(plan.downpayment_amount || 0);
+  const remainingDownpayment = Math.max(0, requiredDownpayment - Number(plan.reservation_fee || 0));
 
   return (
     <div className="space-y-4 rounded-2xl border border-[#e2e8f0] bg-white p-5 shadow-sm">
@@ -19,7 +22,17 @@ export default function PaymentSummaryCard({ plan }) {
       </div>
       <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
         <div><p className="text-[#64748b]">Total Contract Price</p><p className="font-extrabold text-[#272727]">{formatPeso(plan.total_contract_price)}</p></div>
-        <div><p className="text-[#64748b]">Initial Amount Due</p><p className="font-extrabold text-[#272727]">{formatPeso(plan.initial_amount_due)}</p></div>
+        {plan.payment_type !== 'full_payment' && (
+          <>
+            <div><p className="text-[#64748b]">Reservation Fee</p><p className="font-extrabold text-[#272727]">{formatPeso(plan.reservation_fee)}</p><p className="text-xs font-bold text-emerald-700">Applied to Downpayment: Yes</p></div>
+            <div><p className="text-[#64748b]">Required Downpayment</p><p className="font-extrabold text-[#272727]">{formatPeso(requiredDownpayment)}</p></div>
+            <div><p className="text-[#64748b]">Remaining Downpayment</p><p className="font-extrabold text-[#272727]">{formatPeso(remainingDownpayment)}</p></div>
+          </>
+        )}
+        {Number(plan.interest_rate || 0) > 0 && (
+          <div><p className="text-[#64748b]">Total Payable With Interest</p><p className="font-extrabold text-[#272727]">{formatPeso(totalPaymentDue)}</p></div>
+        )}
+        <div><p className="text-[#64748b]">Total Initial Payment</p><p className="font-extrabold text-[#272727]">{formatPeso(plan.initial_amount_due)}</p></div>
         <div><p className="text-[#64748b]">Amount Paid</p><p className="font-extrabold text-[#272727]">{formatPeso(plan.amount_paid)}</p></div>
         <div><p className="text-[#64748b]">Remaining Balance</p><p className="font-extrabold text-[#272727]">{formatPeso(plan.remaining_balance)}</p></div>
         {monthlyPayment > 0 && <div><p className="text-[#64748b]">Monthly Payment</p><p className="font-extrabold text-[#272727]">{formatPeso(monthlyPayment)}</p></div>}
@@ -27,7 +40,7 @@ export default function PaymentSummaryCard({ plan }) {
       </div>
       <PaymentAmountIndicator
         paymentType={plan.payment_type}
-        totalContractPrice={plan.total_contract_price}
+        totalContractPrice={totalPaymentDue}
         initialAmountDue={plan.initial_amount_due}
         amountPaid={plan.amount_paid}
         remainingBalance={plan.remaining_balance}

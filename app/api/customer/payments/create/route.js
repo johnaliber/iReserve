@@ -48,6 +48,15 @@ export async function POST(request) {
     return json(403, { error: 'You can only pay your own account ledger.' });
   }
 
+  const { data: documents } = await admin
+    .from('documents')
+    .select('status')
+    .eq('reservation_id', plan.reservation_id);
+
+  if (!documents?.length || documents.some((document) => document.status !== 'approved')) {
+    return json(409, { error: 'Your documents must be approved before submitting your first payment.' });
+  }
+
   let schedule = null;
   if (paymentScheduleId) {
     const { data: scheduleRow, error: scheduleError } = await admin

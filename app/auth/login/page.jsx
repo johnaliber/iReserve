@@ -104,19 +104,7 @@ export default function LoginPage() {
               Reserve your future home with a guided, visual property experience.
             </p>
           </div>
-          <div className="absolute bottom-10 left-10 right-10 border border-white/20 bg-white/15 p-6 text-white shadow-2xl backdrop-blur-md">
-            <div className="flex items-center gap-3">
-              <span className="flex h-12 w-12 items-center justify-center bg-emerald-500 text-white">
-                <Home className="h-6 w-6" />
-              </span>
-              <div>
-                <p className="text-lg font-extrabold">Welcome back</p>
-                <p className="mt-1 text-sm leading-6 text-white/80">
-                  Access dashboards, reservations, payments, and viewing schedules.
-                </p>
-              </div>
-            </div>
-          </div>
+          
         </section>
 
         <section className="flex items-center justify-center px-6 py-12 sm:px-10 lg:px-14">
