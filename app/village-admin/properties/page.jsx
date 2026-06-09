@@ -470,6 +470,8 @@ export default function VillageAdminPropertiesPage() {
                   </button>
                 )}
               </div>
+              {/* Identity Fields */}
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 mt-1">Identity</p>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
                 <MiniField label="Configuration Name">
                   <input className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 outline-none" placeholder="e.g. Verdant 50sqm" value={presetForm.name} onChange={(e) => updatePresetField('name', e.target.value)} />
@@ -489,6 +491,13 @@ export default function VillageAdminPropertiesPage() {
                 <MiniField label="Price">
                   <input type="number" min="0" className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 outline-none" placeholder="3000000" value={presetForm.price} onChange={(e) => updatePresetField('price', e.target.value)} />
                 </MiniField>
+              </div>
+
+              {/* Pricing & Financing Fields */}
+              <div className="border-t border-slate-800/60 mt-4 pt-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Pricing & Financing</p>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
                 <MiniField label="Reservation Fee">
                   <input type="number" min="0" className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 outline-none" placeholder="5000" value={presetForm.reservation_fee} onChange={(e) => updatePresetField('reservation_fee', e.target.value)} />
                 </MiniField>
@@ -501,6 +510,13 @@ export default function VillageAdminPropertiesPage() {
                 <MiniField label="Default Loan Term (years)">
                   <input type="number" min="1" className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 outline-none" placeholder="15" value={presetForm.default_loan_term_years} onChange={(e) => updatePresetField('default_loan_term_years', e.target.value)} />
                 </MiniField>
+              </div>
+
+              {/* Property Specs Fields */}
+              <div className="border-t border-slate-800/60 mt-4 pt-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Property Specifications</p>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
                 <MiniField label="Lot Size (sqm)">
                   <input type="number" min="0" className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 outline-none" placeholder="50" value={presetForm.lot_size} onChange={(e) => updatePresetField('lot_size', e.target.value)} />
                 </MiniField>

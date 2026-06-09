@@ -20,7 +20,7 @@ import Navbar from '@/components/layout/Navbar';
 import PaymentTypeSelector from '@/components/payments/PaymentTypeSelector';
 import PaymentCalculator from '@/components/payments/PaymentCalculator';
 import PaymentQr, { makePaymentCode } from '@/components/payments/PaymentQr';
-import { calculatePaymentPlan, formatPeso } from '@/lib/payments/paymentMath';
+import { calculatePaymentPlan, formatPeso, getInterestRateForTerm } from '@/lib/payments/paymentMath';
 import ConfirmActionDialog from '@/components/shared/ConfirmActionDialog';
 import ReservationProgressSteps from '@/components/customer/ReservationProgressSteps';
 import DelayedLoadingState from '@/components/shared/DelayedLoadingState';
@@ -196,7 +196,7 @@ export default function ReservePropertyPage() {
         downpaymentAmount: '',
         downpaymentPercentage,
         installmentTermMonths,
-        interestRate: property?.interest_rate || 0
+        interestRate: getInterestRateForTerm(property?.interest_rate, installmentTermMonths / 12)
       });
       const submittedAmount = Number(paymentAmount || planPreview.initialAmountDue);
       if (submittedAmount < planPreview.initialAmountDue) {
@@ -250,7 +250,7 @@ export default function ReservePropertyPage() {
     downpaymentAmount: '',
     downpaymentPercentage,
     installmentTermMonths,
-    interestRate: property?.interest_rate || 0
+    interestRate: getInterestRateForTerm(property?.interest_rate, installmentTermMonths / 12)
   });
   const paymentPayload = [
     'iReserve',
@@ -462,7 +462,7 @@ export default function ReservePropertyPage() {
                   downpaymentAmount=""
                   downpaymentPercentage={downpaymentPercentage}
                   installmentTermMonths={installmentTermMonths}
-                  interestRate={property?.interest_rate || 0}
+                  interestRate={getInterestRateForTerm(property?.interest_rate, installmentTermMonths / 12)}
                 />
 
                 <section className="rounded-2xl border border-[#e2e8f0] bg-white p-4 shadow-sm">

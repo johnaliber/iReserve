@@ -184,7 +184,7 @@ export default function CustomerSectionPage({ section }) {
       if (section === 'reservations') {
         query = supabase
           .from('reservations')
-          .select('*, properties(*, villages(*))')
+          .select('*, properties(*, villages(*)), payment_plans(interest_rate, monthly_payment, installment_term_months)')
           .eq('customer_id', user.id)
           .order('created_at', { ascending: false });
       } else if (section === 'payments') {
@@ -620,23 +620,33 @@ export default function CustomerSectionPage({ section }) {
         </div>
       )}
 
-      {selectedItem && section === 'reservations' && (
-        <DetailModal title="Reservation Details" eyebrow={selectedItem.reservation_code} onClose={() => setSelectedItem(null)}>
-          <DetailGrid rows={[
-            ['Property', `Block ${selectedItem.properties?.block_number || '-'}, Lot ${selectedItem.properties?.lot_number || '-'}`],
-            ['Village', selectedItem.properties?.villages?.name || 'N/A'],
-            ['Location', `Block ${selectedItem.properties?.block_number || '-'}, Lot ${selectedItem.properties?.lot_number || '-'}`],
-            ['Status', selectedItem.status?.replaceAll('_', ' ')],
-            ['Reservation Fee', formatMoney(selectedItem.reservation_fee)],
-            ['Reserved On', formatDateTime(selectedItem.reserved_at)],
-            ['Expires On', formatDateTime(selectedItem.expires_at)],
-            ['Payment Type', selectedItem.payment_type?.replaceAll('_', ' ') || 'Not set'],
-            ['Contract Price', formatMoney(selectedItem.total_contract_price || selectedItem.properties?.price)],
-            ['Amount Paid', formatMoney(selectedItem.amount_paid)],
-            ['Remaining Balance', formatMoney(selectedItem.remaining_balance)]
-          ]} />
-        </DetailModal>
-      )}
+      {selectedItem && section === 'reservations' && (() => {
+        const plan = Array.isArray(selectedItem.payment_plans)
+          ? selectedItem.payment_plans[0]
+          : selectedItem.payment_plans;
+        const interestRate = plan?.interest_rate ?? selectedItem.properties?.interest_rate ?? 0;
+        const monthlyPayment = plan?.monthly_payment ?? selectedItem.monthly_payment;
+        const termMonths = plan?.installment_term_months ?? selectedItem.installment_term_months;
+        return (
+          <DetailModal title="Reservation Details" eyebrow={selectedItem.reservation_code} onClose={() => setSelectedItem(null)}>
+            <DetailGrid rows={[
+              ['Property', `Block ${selectedItem.properties?.block_number || '-'}, Lot ${selectedItem.properties?.lot_number || '-'}`],
+              ['Village', selectedItem.properties?.villages?.name || 'N/A'],
+              ['Status', selectedItem.status?.replaceAll('_', ' ')],
+              ['Reservation Fee', formatMoney(selectedItem.reservation_fee)],
+              ['Reserved On', formatDateTime(selectedItem.reserved_at)],
+              ['Expires On', formatDateTime(selectedItem.expires_at)],
+              ['Payment Type', selectedItem.payment_type?.replaceAll('_', ' ') || 'Not set'],
+              ['Contract Price', formatMoney(selectedItem.total_contract_price || selectedItem.properties?.price)],
+              ['Interest Rate', `${Number(interestRate)}% per annum`],
+              ['Monthly Payment', monthlyPayment ? formatMoney(monthlyPayment) : 'N/A'],
+              ['Installment Term', termMonths ? `${termMonths} months (${Math.round(termMonths / 12)} years)` : 'N/A'],
+              ['Amount Paid', formatMoney(selectedItem.amount_paid)],
+              ['Remaining Balance', formatMoney(selectedItem.remaining_balance)]
+            ]} />
+          </DetailModal>
+        );
+      })()}
 
       {selectedItem && section === 'payments' && (
         <DetailModal title="Payment Receipt" eyebrow={selectedItem.official_receipt_number || 'Customer Payment Copy'} onClose={() => setSelectedItem(null)}>

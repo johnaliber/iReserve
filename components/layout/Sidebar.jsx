@@ -24,7 +24,9 @@ import {
   Settings,
   Shield,
   User,
-  Users
+  Users,
+  LogOut,
+  MoreVertical
 } from 'lucide-react';
 
 function initials(name = '') {
@@ -97,13 +99,15 @@ export default function Sidebar({ isOpen, isCollapsed = false, onClose }) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      setProfile(data || null);
+      setProfile(data ? { ...data, email: user.email } : null);
     }
     fetchProfile();
   }, [supabase]);
 
   const role = profile?.role;
-  const links = linksByRole[role] || [];
+  const allLinks = linksByRole[role] || [];
+  const mainLinks = allLinks.filter(link => !['Settings', 'Account'].includes(link.name));
+  const settingsLink = allLinks.find(link => ['Settings', 'Account'].includes(link.name));
   const ledgerRouteActive = pathname.startsWith('/accounting/ledger/');
   const ledgerExpanded = ledgerOpen || ledgerRouteActive;
 
@@ -197,26 +201,57 @@ export default function Sidebar({ isOpen, isCollapsed = false, onClose }) {
           <nav className="space-y-1.5">
             {role === 'accounting' ? (
               <>
-                {renderNavigationLink(links[0])}
+                {mainLinks[0] && renderNavigationLink(mainLinks[0])}
                 {renderLedger()}
-                {links.slice(1).map(renderNavigationLink)}
+                {mainLinks.slice(1).map(renderNavigationLink)}
               </>
-            ) : links.map(renderNavigationLink)}
+            ) : mainLinks.map(renderNavigationLink)}
           </nav>
         </div>
         {profile && (
-          <div className="border-t border-[#e2e8f0] p-3">
-            <div className={`flex items-center gap-3 rounded-xl border border-[#e5ebe8] bg-[#f7f9f8] p-3 ${isCollapsed ? 'justify-center' : ''}`}>
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[#dff3eb] text-sm font-extrabold text-[#13795b]">
+          <div className="border-t border-[#e2e8f0] px-3 pb-3 pt-4 mt-auto">
+            <div className="mb-4 space-y-1">
+              {settingsLink && (
+                <Link
+                  href={settingsLink.href}
+                  onClick={onClose}
+                  title={isCollapsed ? settingsLink.name : undefined}
+                  className={`flex min-h-10 items-center gap-3 rounded-lg px-3 text-sm font-bold transition text-[#66756e] hover:bg-[#f1f5f5] hover:text-[#223129] ${isCollapsed ? 'justify-center' : ''}`}
+                >
+                  <settingsLink.icon className="h-5 w-5 flex-shrink-0 text-[#8b9992]" />
+                  {!isCollapsed && <span>{settingsLink.name === 'Account' ? 'Settings' : settingsLink.name}</span>}
+                </Link>
+              )}
+              <button
+                type="button"
+                onClick={async () => {
+                  await supabase.auth.signOut();
+                  window.location.href = '/';
+                }}
+                title={isCollapsed ? "Logout" : undefined}
+                className={`flex w-full min-h-10 items-center gap-3 rounded-lg px-3 text-sm font-bold transition text-[#66756e] hover:bg-[#f1f5f5] hover:text-[#223129] ${isCollapsed ? 'justify-center' : ''}`}
+              >
+                <LogOut className="h-5 w-5 flex-shrink-0 text-[#8b9992]" />
+                {!isCollapsed && <span>Logout</span>}
+              </button>
+            </div>
+            
+            <div className={`flex items-center gap-3 rounded-xl bg-[#f8faf9] p-3 ${isCollapsed ? 'justify-center' : ''}`}>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[#223129] text-sm font-extrabold text-white">
                 {initials(profile.full_name)}
               </div>
               {!isCollapsed && (
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-extrabold text-[#223129]">{profile.full_name}</p>
-                  <p className="truncate text-[10px] font-bold uppercase tracking-wider text-[#16835f]">
-                    {profile.role?.replaceAll('_', ' ')}
+                  <p className="truncate text-[10px] font-bold text-[#8b9992]">
+                    {profile.email}
                   </p>
                 </div>
+              )}
+              {!isCollapsed && (
+                <button className="text-[#8b9992] hover:text-[#223129] transition-colors">
+                  <MoreVertical className="h-4 w-4" />
+                </button>
               )}
             </div>
           </div>

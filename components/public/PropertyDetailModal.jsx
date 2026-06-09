@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { 
   X, 
@@ -16,10 +16,12 @@ import {
   Coins, 
   Calendar,
   Building,
-  Navigation
+  Navigation,
+  TrendingUp,
+  Info
 } from 'lucide-react';
 import Link from 'next/link';
-import { calculatePaymentPlan } from '@/lib/payments/paymentMath';
+import { calculatePaymentPlan, getInterestRateForTerm } from '@/lib/payments/paymentMath';
 
 export default function PropertyDetailModal({ property, isOpen, onClose, showInternalCode = false }) {
   const supabase = createClient();
@@ -83,16 +85,19 @@ export default function PropertyDetailModal({ property, isOpen, onClose, showInt
     floor_plan_url
   } = property;
 
-  const displayInterestRate = Number(interest_rate || 0);
+  // Dynamic interest rate based on selected loan term
+  const effectiveInterestRate = getInterestRateForTerm(interest_rate, loanTermYears);
   const downpaymentAmount = price * (downpaymentPercent / 100);
+
   const estimate = calculatePaymentPlan({
     propertyPrice: price,
     reservationFee: reservation_fee,
     paymentType: 'installment',
     downpaymentPercentage: downpaymentPercent,
     installmentTermMonths: loanTermYears * 12,
-    interestRate: displayInterestRate
+    interestRate: effectiveInterestRate
   });
+
   const monthlyAmortization = estimate.monthlyPayment;
   const reserveHref = `/reserve/${id}?downpayment_percentage=${encodeURIComponent(downpaymentPercent)}&loan_term_years=${encodeURIComponent(loanTermYears)}`;
 
@@ -136,9 +141,9 @@ export default function PropertyDetailModal({ property, isOpen, onClose, showInt
           </div>
 
           {floor_plan_url && (
-            <a href={floor_plan_url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl border border-[#e2e8f0] bg-white">
+            <a href={floor_plan_url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl border border-slate-800 bg-slate-950/40">
               <img src={floor_plan_url} alt="Floor plan preview" className="h-36 w-full object-contain" />
-              <span className="block border-t border-[#e2e8f0] px-3 py-2 text-center text-xs font-bold text-emerald-700">View Floor Plan</span>
+              <span className="block border-t border-slate-800 px-3 py-2 text-center text-xs font-bold text-emerald-400">View Floor Plan</span>
             </a>
           )}
 
@@ -203,9 +208,9 @@ export default function PropertyDetailModal({ property, isOpen, onClose, showInt
         <div className="flex-1 overflow-y-auto p-6 flex flex-col justify-between space-y-6">
           <div className="space-y-6">
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-600">Lot / House Details</p>
-              <h2 className="mt-1 text-2xl font-extrabold text-[#272727]">Everything you need before reserving</h2>
-              <p className="mt-2 text-sm leading-6 text-[#64748b]">Review the price, size, surroundings, and payment choices below.</p>
+              <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-400">Lot / House Details</p>
+              <h2 className="mt-1 text-2xl font-extrabold text-white">Everything you need before reserving</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-400">Review the price, size, surroundings, and payment choices below.</p>
             </div>
             <div className="flex items-end justify-between border-b border-slate-800 pb-4">
               <div>
@@ -267,17 +272,28 @@ export default function PropertyDetailModal({ property, isOpen, onClose, showInt
                   <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
                     Annual Interest Rate
                   </label>
-                  <div className="w-full bg-slate-950/40 border border-slate-900 text-slate-500 rounded-lg p-2 text-xs font-semibold">
-                    {displayInterestRate}% per annum
+                  <div className="w-full bg-slate-950/40 border border-slate-900 text-emerald-400 rounded-lg p-2 text-xs font-bold flex items-center gap-1.5">
+                    <TrendingUp className="w-3 h-3" />
+                    {effectiveInterestRate}% per annum
                   </div>
                 </div>
               </div>
+
+              {/* Dynamic rate note */}
+              {Number(interest_rate) > 0 && (
+                <div className="flex items-start gap-2 bg-slate-950/60 border border-slate-800 rounded-lg px-3 py-2">
+                  <Info className="w-3 h-3 text-slate-500 mt-0.5 shrink-0" />
+                  <span className="text-[10px] text-slate-500 leading-relaxed">
+                    Interest rate adjusts based on loan term. Base rate: {Number(interest_rate)}%. Shorter terms get lower rates.
+                  </span>
+                </div>
+              )}
 
               {/* Live result output */}
               <div className="pt-3 border-t border-slate-900/60 flex items-center justify-between">
                 <div>
                   <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Estimated Monthly Amortization</span>
-                  <span className="text-[9px] text-slate-500 italic block mt-0.5">Calculated at {displayInterestRate}% fixed interest</span>
+                  <span className="text-[9px] text-slate-500 italic block mt-0.5">Calculated at {effectiveInterestRate}% fixed interest</span>
                 </div>
                 <span className="text-xl font-black text-emerald-400">
                   ₱{Math.round(monthlyAmortization).toLocaleString()}/mo
@@ -285,12 +301,69 @@ export default function PropertyDetailModal({ property, isOpen, onClose, showInt
               </div>
             </div>
 
-            <div className="rounded-xl border border-[#e2e8f0] bg-white p-4">
-              <h4 className="text-sm font-extrabold text-[#272727]">Payment Options</h4>
-              <div className="mt-3 space-y-2 text-xs leading-5 text-[#64748b]">
-                <p><strong className="text-[#272727]">Full Payment:</strong> Pay the full property amount.</p>
-                <p><strong className="text-[#272727]">Partial / Downpayment:</strong> Pay a downpayment first.</p>
-                <p><strong className="text-[#272727]">Installment:</strong> Pay monthly based on your selected term.</p>
+            {/* Estimated Computation Breakdown */}
+            <div className="bg-slate-950/40 border border-slate-900 rounded-xl p-5 space-y-3">
+              <h4 className="text-xs font-bold text-slate-200 flex items-center gap-1.5 border-b border-slate-900 pb-2 mb-1">
+                <Coins className="w-4 h-4 text-emerald-400" />
+                Estimated Computation Breakdown
+              </h4>
+
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Total Contract Price</span>
+                  <span className="font-bold text-slate-200">₱{estimate.totalContractPrice.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Reservation Fee (Hold Fee)</span>
+                  <span className="font-bold text-slate-200">₱{estimate.reservationFee.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Downpayment ({downpaymentPercent}%)</span>
+                  <span className="font-bold text-slate-200">₱{estimate.downpaymentAmount.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Remaining Downpayment (after hold fee)</span>
+                  <span className="font-bold text-slate-200">₱{estimate.remainingDownpayment.toLocaleString()}</span>
+                </div>
+
+                <div className="border-t border-slate-800 pt-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">Principal Balance (to finance)</span>
+                    <span className="font-bold text-white">₱{estimate.principalBalance.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Interest Rate</span>
+                  <span className="font-bold text-emerald-400">{effectiveInterestRate}% p.a.</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Loan Term</span>
+                  <span className="font-bold text-slate-200">{loanTermYears} years ({loanTermYears * 12} months)</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Total Interest Over Term</span>
+                  <span className={`font-bold ${estimate.totalInterest > 0 ? 'text-amber-400' : 'text-slate-400'}`}>
+                    ₱{estimate.totalInterest.toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="border-t border-slate-800 pt-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-300 font-bold">Total Amount Payable</span>
+                    <span className="font-extrabold text-emerald-400 text-sm">₱{estimate.totalPayable.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Payment Options */}
+            <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+              <h4 className="text-sm font-extrabold text-white">Payment Options</h4>
+              <div className="mt-3 space-y-2 text-xs leading-5 text-slate-400">
+                <p><strong className="text-slate-200">Full Payment:</strong> Pay the full property amount.</p>
+                <p><strong className="text-slate-200">Partial / Downpayment:</strong> Pay a downpayment first.</p>
+                <p><strong className="text-slate-200">Installment:</strong> Pay monthly based on your selected term.</p>
               </div>
             </div>
           </div>
@@ -303,7 +376,7 @@ export default function PropertyDetailModal({ property, isOpen, onClose, showInt
             >
               Close
             </button>
-            <Link href={`/customer/site-viewing?property=${id}`} className="flex min-h-12 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-center text-xs font-extrabold text-emerald-700">
+            <Link href={`/customer/site-viewing?property=${id}`} className="flex min-h-12 items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 text-center text-xs font-extrabold text-emerald-400">
               Schedule Site Viewing
             </Link>
             
@@ -322,7 +395,7 @@ export default function PropertyDetailModal({ property, isOpen, onClose, showInt
                 </Link>
               )
             ) : (
-              <div className="flex min-h-12 items-center justify-center rounded-xl border border-amber-200 bg-amber-50 px-4 text-center text-xs font-bold text-amber-800">
+              <div className="flex min-h-12 items-center justify-center rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 text-center text-xs font-bold text-amber-400">
                 This lot is currently not available for reservation.
               </div>
             )}
