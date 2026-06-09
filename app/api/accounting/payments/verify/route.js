@@ -3,6 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { ensureNextPaymentSchedule, recalculatePaymentIndicators } from '@/lib/payments/server';
 import { roundMoney } from '@/lib/payments/paymentMath';
 import { canManageVillagePayments } from '@/lib/auth/canManageVillagePayments';
+import { hasPermission } from '@/lib/auth/rbac';
+import { logAuditEvent } from '@/lib/audit/logAuditEvent';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +34,8 @@ export async function POST(request) {
     .eq('id', user.id)
     .single();
 
-  if (!['accounting', 'village_admin', 'super_admin'].includes(profile?.role)) {
+  if (!['accounting', 'village_admin', 'super_admin'].includes(profile?.role)
+    || !await hasPermission(admin, user.id, 'payments.verify')) {
     return json(403, { error: 'You do not have permission to verify payments.' });
   }
 
@@ -129,13 +132,16 @@ export async function POST(request) {
     })
     .eq('id', payment.reservations?.property_id);
 
-  await admin.from('audit_logs').insert({
-    user_id: user.id,
-    village_id: payment.village_id,
-    action: 'VERIFY_PAYMENT',
-    entity_type: 'payment',
-    entity_id: paymentId,
-    metadata: { officialReceiptNumber, payment_plan_id: payment.payment_plan_id }
+  await logAuditEvent({
+    admin,
+    request,
+    userId: user.id,
+    villageId: payment.village_id,
+    action: 'payment_verified',
+    entityType: 'payment',
+    entityId: paymentId,
+    description: `Verified payment for reservation ${payment.reservations?.reservation_code || payment.reservation_id}.`,
+    metadata: { official_receipt_number: officialReceiptNumber, payment_plan_id: payment.payment_plan_id }
   });
 
   if (payment.customer_id) {

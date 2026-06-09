@@ -3,8 +3,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -17,20 +15,23 @@ import {
   YAxis
 } from 'recharts';
 import {
+  Building,
   CalendarCheck,
-  CheckCircle2,
   Clock,
   CreditCard,
   Home,
+  Inbox,
   Loader2,
   MapPin,
   PhilippinePeso,
   RefreshCcw,
   Search,
-  TrendingUp
+  TrendingUp,
+  Users
 } from 'lucide-react';
 import DashboardShell from '@/components/layout/DashboardShell';
 import { createClient } from '@/lib/supabase/client';
+import SalesOverviewAreaChart from '@/components/charts/SalesOverviewAreaChart';
 
 const cardClass = 'rounded-2xl border border-[#e2e8f0] bg-white p-5 shadow-sm';
 const inputClass = 'rounded-lg border border-[#dbe4ee] bg-white px-3 py-2 text-sm text-[#272727] shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15';
@@ -248,10 +249,8 @@ export default function AdminAnalyticsDashboard({ scope = 'global' }) {
     .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const soldLots = dashboardData.properties.filter((property) => property.status === 'sold');
   const pendingReservations = dashboardData.reservations.filter((reservation) => reservation.status?.startsWith('pending')).length;
-  const approvedReservations = dashboardData.reservations.filter((reservation) => ['approved', 'reserved'].includes(reservation.status)).length;
   const pendingPayments = dashboardData.payments.filter((payment) => ['unpaid', 'pending_verification', 'overdue'].includes(payment.payment_status)).length;
   const pendingViewings = dashboardData.viewings.filter((viewing) => viewing.status === 'pending').length;
-  const refundRequests = dashboardData.refunds.filter((refund) => ['requested', 'approved'].includes(refund.status)).length;
 
   const salesData = useMemo(() => {
     const grouped = new Map();
@@ -259,9 +258,21 @@ export default function AdminAnalyticsDashboard({ scope = 'global' }) {
       .filter((payment) => payment.payment_status === 'verified')
       .forEach((payment) => {
         const key = periodKey(payment.created_at, period);
-        const current = grouped.get(key) || { label: key, revenue: 0, sales: 0 };
-        current.revenue += Number(payment.amount || 0);
-        current.sales += 1;
+        const current = grouped.get(key) || {
+          month: key,
+          sales: 0,
+          reservationFees: 0,
+          downpayments: 0,
+          installments: 0,
+          fullPayments: 0
+        };
+        const amount = Number(payment.amount || 0);
+        const purpose = payment.payment_purpose;
+        current.sales += amount;
+        if (purpose === 'reservation_fee') current.reservationFees += amount;
+        if (purpose === 'downpayment') current.downpayments += amount;
+        if (['monthly_installment', 'partial_balance_payment'].includes(purpose)) current.installments += amount;
+        if (purpose === 'full_payment') current.fullPayments += amount;
         grouped.set(key, current);
       });
     return Array.from(grouped.values()).slice(-12);
@@ -360,51 +371,45 @@ export default function AdminAnalyticsDashboard({ scope = 'global' }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <KpiCard title="Total Sales" value={compact(soldLots.length)} icon={TrendingUp} accent="purple" sub="Sold lots" />
-          <KpiCard title="Total Revenue" value={money(verifiedRevenue)} icon={PhilippinePeso} accent="emerald" sub="Verified payments" />
-          <KpiCard title="Pending Reservations" value={compact(pendingReservations)} icon={Clock} accent="yellow" />
-          <KpiCard title="Approved Reservations" value={compact(approvedReservations)} icon={CheckCircle2} accent="emerald" />
-          <KpiCard title="Available Lots" value={compact(lotAvailability[0].value)} icon={Home} accent="blue" />
-          <KpiCard title="Reserved Lots" value={compact(lotAvailability[1].value)} icon={MapPin} accent="blue" />
-          <KpiCard title="Sold Lots" value={compact(lotAvailability[2].value)} icon={TrendingUp} accent="purple" />
-          <KpiCard title="Pending Payments" value={compact(pendingPayments)} icon={CreditCard} accent="yellow" />
-          <KpiCard title="Site Viewing Requests" value={compact(pendingViewings)} icon={CalendarCheck} accent="blue" />
-          <KpiCard title="Cancellation / Refund Requests" value={compact(refundRequests)} icon={RefreshCcw} accent="red" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {scope === 'village' ? (
+            <>
+              <KpiCard title="Total Properties" value={compact(dashboardData.properties.length)} icon={Building} accent="blue" />
+              <KpiCard title="Available Lots" value={compact(lotAvailability[0].value)} icon={Home} accent="emerald" />
+              <KpiCard title="Reserved Lots" value={compact(lotAvailability[1].value)} icon={MapPin} accent="blue" />
+              <KpiCard title="Sold Lots" value={compact(lotAvailability[2].value)} icon={TrendingUp} accent="purple" />
+              <KpiCard title="Pending Reservations" value={compact(pendingReservations)} icon={Clock} accent="yellow" />
+              <KpiCard title="Pending Site Viewings" value={compact(pendingViewings)} icon={CalendarCheck} accent="blue" />
+            </>
+          ) : (
+            <>
+              <KpiCard title="Total Villages" value={compact(dashboardData.villages.length)} icon={Building} accent="blue" />
+              <KpiCard title="Total Users" value={compact(data.customers.length)} icon={Users} accent="purple" />
+              <KpiCard title="Total Reservations" value={compact(dashboardData.reservations.length)} icon={Inbox} accent="blue" />
+              <KpiCard title="Total Sales" value={money(verifiedRevenue)} icon={PhilippinePeso} accent="emerald" />
+              <KpiCard title="Pending Payments" value={compact(pendingPayments)} icon={CreditCard} accent="yellow" />
+              <KpiCard title="Available Lots" value={compact(lotAvailability[0].value)} icon={Home} accent="emerald" />
+            </>
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <section className={`${cardClass} xl:col-span-2`}>
-            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-lg font-extrabold text-[#272727]">Sales Overview</h2>
-                <p className="text-sm text-[#64748b]">Verified revenue grouped by selected period.</p>
-              </div>
-              <select className={inputClass} value={period} onChange={(e) => setPeriod(e.target.value)}>
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-                <option value="yearly">Yearly</option>
-              </select>
-            </div>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={salesData}>
-                  <defs>
-                    <linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.28} />
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-                  <XAxis dataKey="label" stroke="#64748b" fontSize={12} />
-                  <YAxis stroke="#64748b" fontSize={12} tickFormatter={(value) => compact(value)} />
-                  <Tooltip formatter={(value) => money(value)} />
-                  <Area type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={3} fill="url(#revenueFill)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </section>
+          <div className="xl:col-span-2">
+            <SalesOverviewAreaChart
+              data={salesData}
+              subtitle={scope === 'village'
+                ? 'Monthly sales performance for your assigned village.'
+                : 'Monthly sales performance across all villages.'}
+              actions={(
+                <select className={inputClass} value={period} onChange={(e) => setPeriod(e.target.value)}>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="yearly">Yearly</option>
+                </select>
+              )}
+            />
+          </div>
 
           <section className={cardClass}>
             <h2 className="text-lg font-extrabold text-[#272727]">Lot Availability</h2>

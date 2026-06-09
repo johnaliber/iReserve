@@ -8,6 +8,8 @@ import {
 } from '@/lib/payments/server';
 import { roundMoney } from '@/lib/payments/paymentMath';
 import { canManageVillagePayments } from '@/lib/auth/canManageVillagePayments';
+import { hasPermission } from '@/lib/auth/rbac';
+import { logAuditEvent } from '@/lib/audit/logAuditEvent';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,7 +47,8 @@ export async function POST(request) {
     .eq('id', user.id)
     .single();
 
-  if (!['accounting', 'village_admin', 'super_admin'].includes(profile?.role)) {
+  if (!['accounting', 'village_admin', 'super_admin'].includes(profile?.role)
+    || !await hasPermission(admin, user.id, 'payments.record_manual')) {
     return json(403, { error: 'You do not have permission to record cash payments.' });
   }
 
@@ -157,13 +160,16 @@ export async function POST(request) {
   }
   const updatedPlan = await recalculatePaymentIndicators(admin, paymentPlanId);
 
-  await admin.from('audit_logs').insert({
-    user_id: user.id,
-    village_id: plan.village_id,
-    action: 'RECORD_CASH_PAYMENT',
-    entity_type: 'payment',
-    entity_id: payment.id,
-    metadata: { payment_plan_id: paymentPlanId, payment_schedule_id: schedule.id, receiptNumber }
+  await logAuditEvent({
+    admin,
+    request,
+    userId: user.id,
+    villageId: plan.village_id,
+    action: 'payment_recorded_manually',
+    entityType: 'payment',
+    entityId: payment.id,
+    description: `Recorded a manual cash payment for ${plan.reservations?.reservation_code || plan.reservation_id}.`,
+    metadata: { payment_plan_id: paymentPlanId, payment_schedule_id: schedule.id, receipt_number: receiptNumber }
   });
 
   const customerId = plan.customer_id || plan.reservations?.customer_id;

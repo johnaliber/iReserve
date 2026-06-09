@@ -87,6 +87,24 @@ button {
   color: #272727;
 }
 
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+a[href],
+label[for],
+select:not(:disabled),
+input[type="checkbox"]:not(:disabled),
+input[type="radio"]:not(:disabled),
+input[type="file"]:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled,
+select:disabled,
+input:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
 ::placeholder {
   color: #272727;
   opacity: 0.65;

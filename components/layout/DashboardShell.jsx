@@ -21,7 +21,7 @@ export default function DashboardShell({ children }) {
   };
 
   return (
-    <div className="relative flex min-h-screen flex-col overflow-hidden bg-[#f8fafc] text-[#272727]">
+    <div className="relative flex min-h-screen flex-col overflow-hidden bg-[#f5f7f6] text-[#17211d]">
       <Navbar toggleSidebar={toggleSidebar} isSidebarOpen={isSidebarOpen} />
       
       <div className="relative z-10 flex flex-1 overflow-hidden">

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import DashboardShell from '@/components/layout/DashboardShell';
 import { 
@@ -8,6 +9,7 @@ import {
   BellRing,
   Building2,
   CalendarClock,
+  BookOpen,
   CreditCard, 
   Check, 
   X, 
@@ -16,6 +18,8 @@ import {
   Filter, 
   Download,
   FileCheck,
+  ReceiptText,
+  Users,
   Loader2,
 } from 'lucide-react';
 import PaymentVerificationPanel from '@/components/accounting/PaymentVerificationPanel';
@@ -78,7 +82,7 @@ function getLedgerStatus(plan) {
   if (overdueRows.length > 0 || plan.status === 'overdue') {
     return {
       label: 'Overdue',
-      tone: 'border-red-200 bg-red-50 text-red-700',
+      tone: 'border-[#fecaca] bg-[#fff7f7] text-[#b42318]',
       nextDue,
       overdueRows,
       messageType: 'overdue',
@@ -89,7 +93,7 @@ function getLedgerStatus(plan) {
   if (nextDue && daysUntilDue <= 7) {
     return {
       label: 'Due Soon',
-      tone: 'border-amber-200 bg-amber-50 text-amber-700',
+      tone: 'border-[#fde7b2] bg-[#fffbeb] text-[#9a6700]',
       nextDue,
       overdueRows,
       messageType: 'payment_reminder',
@@ -100,7 +104,7 @@ function getLedgerStatus(plan) {
   if (plan.status === 'fully_paid') {
     return {
       label: 'Fully Paid',
-      tone: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+      tone: 'border-[#b7e4d2] bg-[#f0faf6] text-[#13795b]',
       nextDue,
       overdueRows,
       messageType: 'payment_reminder',
@@ -110,7 +114,7 @@ function getLedgerStatus(plan) {
 
   return {
     label: nextDue ? 'Current' : 'No Due',
-    tone: 'border-slate-200 bg-slate-50 text-slate-600',
+    tone: 'border-[#dce4e0] bg-[#f4f7f5] text-[#52635b]',
     nextDue,
     overdueRows,
     messageType: 'payment_reminder',
@@ -118,7 +122,30 @@ function getLedgerStatus(plan) {
   };
 }
 
-export default function AccountingDashboardPage() {
+const VIEW_CONFIG = {
+  dashboard: {
+    title: 'Accounting Dashboard',
+    subtitle: 'Monitor collections, pending reviews, documents, and overdue customer accounts.',
+    icon: CreditCard
+  },
+  accounts: {
+    title: 'Customer Account Ledger',
+    subtitle: 'View customer balances, monthly dues, upcoming payments, and overdue accounts.',
+    icon: CalendarClock
+  },
+  receipts: {
+    title: 'Receipts Audit Ledger',
+    subtitle: 'Review verified receipts, payment references, transfer methods, and audit records.',
+    icon: ReceiptText
+  },
+  documents: {
+    title: 'Customer Documents',
+    subtitle: 'Review and approve required customer documents before payment verification or reservation approval.',
+    icon: FileCheck
+  }
+};
+
+export default function AccountingDashboardPage({ view = 'dashboard' }) {
   const supabase = useMemo(() => createClient(), []);
 
   const [loading, setLoading] = useState(true);
@@ -140,6 +167,21 @@ export default function AccountingDashboardPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [methodFilter, setMethodFilter] = useState('');
   const [customerFilter, setCustomerFilter] = useState('');
+  const [propertyFilter, setPropertyFilter] = useState('');
+  const [accountStatusFilter, setAccountStatusFilter] = useState('');
+  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [accountDateFrom, setAccountDateFrom] = useState('');
+  const [accountDateTo, setAccountDateTo] = useState('');
+  const [accountSort, setAccountSort] = useState('next_due');
+  const [referenceFilter, setReferenceFilter] = useState('');
+  const [receiptFilter, setReceiptFilter] = useState('');
+  const [receiptDateFrom, setReceiptDateFrom] = useState('');
+  const [receiptDateTo, setReceiptDateTo] = useState('');
+  const [documentStatusFilter, setDocumentStatusFilter] = useState('');
+  const [documentTypeFilter, setDocumentTypeFilter] = useState('');
+  const [documentDate, setDocumentDate] = useState('');
+  const [pendingDocumentsOnly, setPendingDocumentsOnly] = useState(false);
+  const [statementPlan, setStatementPlan] = useState(null);
 
   // Audit Dialog state
   const [selectedPayment, setSelectedPayment] = useState(null);
@@ -450,22 +492,69 @@ export default function AccountingDashboardPage() {
     return [...options.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [displayedPayments, accountPlans, documents]);
 
+  const propertyOptions = useMemo(() => {
+    const options = new Map();
+    [
+      ...displayedPayments.map((payment) => payment.reservations?.properties),
+      ...accountPlans.map((plan) => plan.reservations?.properties),
+      ...documents.map((document) => document.reservations?.properties)
+    ]
+      .filter(Boolean)
+      .forEach((property) => {
+        options.set(property.id, {
+          id: property.id,
+          label: `${property.property_code || 'Property'} - Block ${property.block_number || '-'} Lot ${property.lot_number || '-'}`
+        });
+      });
+    return [...options.values()].sort((a, b) => a.label.localeCompare(b.label));
+  }, [displayedPayments, accountPlans, documents]);
+
+  const documentTypes = useMemo(
+    () => [...new Set(documents.map((document) => document.document_type).filter(Boolean))].sort(),
+    [documents]
+  );
+
   // Filter payments
   const filteredPayments = displayedPayments.filter((p) => {
     if (statusFilter && p.payment_status !== statusFilter) return false;
     if (methodFilter && p.payment_method !== methodFilter) return false;
     if (customerFilter && getPaymentCustomerKey(p) !== customerFilter) return false;
+    if (referenceFilter && !String(p.reference_number || '').toLowerCase().includes(referenceFilter.toLowerCase())) return false;
+    if (receiptFilter && !String(p.official_receipt_number || '').toLowerCase().includes(receiptFilter.toLowerCase())) return false;
+    const paymentDate = String(p.created_at || '').slice(0, 10);
+    if (receiptDateFrom && paymentDate < receiptDateFrom) return false;
+    if (receiptDateTo && paymentDate > receiptDateTo) return false;
     return true;
   });
 
-  const filteredAccountPlans = accountPlans.filter((plan) => {
-    if (!customerFilter) return true;
-    return getPlanCustomerKey(plan) === customerFilter;
-  });
+  const filteredAccountPlans = accountPlans
+    .filter((plan) => {
+      const ledgerStatus = getLedgerStatus(plan);
+      if (customerFilter && getPlanCustomerKey(plan) !== customerFilter) return false;
+      if (propertyFilter && plan.reservations?.properties?.id !== propertyFilter) return false;
+      if (accountStatusFilter && ledgerStatus.label.toLowerCase().replace(' ', '_') !== accountStatusFilter) return false;
+      if (overdueOnly && ledgerStatus.overdueRows.length === 0 && plan.status !== 'overdue') return false;
+      const dueDate = String(ledgerStatus.nextDue?.due_date || '');
+      if (accountDateFrom && (!dueDate || dueDate < accountDateFrom)) return false;
+      if (accountDateTo && (!dueDate || dueDate > accountDateTo)) return false;
+      return true;
+    })
+    .sort((left, right) => {
+      if (accountSort === 'balance_desc') return Number(right.remaining_balance || 0) - Number(left.remaining_balance || 0);
+      if (accountSort === 'balance_asc') return Number(left.remaining_balance || 0) - Number(right.remaining_balance || 0);
+      const leftDue = getLedgerStatus(left).nextDue?.due_date || '9999-12-31';
+      const rightDue = getLedgerStatus(right).nextDue?.due_date || '9999-12-31';
+      return leftDue.localeCompare(rightDue);
+    });
 
   const filteredDocuments = documents.filter((document) => {
-    if (!customerFilter) return true;
-    return getDocumentCustomerKey(document) === customerFilter;
+    if (customerFilter && getDocumentCustomerKey(document) !== customerFilter) return false;
+    if (documentStatusFilter && document.status !== documentStatusFilter) return false;
+    if (pendingDocumentsOnly && document.status !== 'pending') return false;
+    if (documentTypeFilter && document.document_type !== documentTypeFilter) return false;
+    if (propertyFilter && document.reservations?.properties?.id !== propertyFilter) return false;
+    if (documentDate && String(document.uploaded_at || '').slice(0, 10) !== documentDate) return false;
+    return true;
   });
 
   // Export Sales ledger to CSV
@@ -496,27 +585,36 @@ export default function AccountingDashboardPage() {
   const pendingCount = filteredPayments.filter(p => p.payment_status === 'pending_verification').length;
   const verifiedCount = filteredPayments.filter(p => p.payment_status === 'verified').length;
   const totalCollections = filteredPayments.filter(p => p.payment_status === 'verified').reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
+  const pendingDocumentsCount = documents.filter((document) => document.status === 'pending').length;
+  const overdueAccountsCount = accountPlans.filter((plan) => {
+    const status = getLedgerStatus(plan);
+    return status.overdueRows.length > 0 || plan.status === 'overdue';
+  }).length;
+  const viewConfig = VIEW_CONFIG[view] || VIEW_CONFIG.dashboard;
+  const ViewIcon = viewConfig.icon;
 
   return (
     <DashboardShell>
       <div className="space-y-6">
         
         {/* Header Title */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-900 pb-5">
+        <div className="flex flex-col justify-between gap-5 border-b border-[#dfe6e2] pb-6 md:flex-row md:items-end">
           <div>
-            <h1 className="text-3xl font-extrabold text-white flex items-center gap-2">
-              <CreditCard className="w-8 h-8 text-emerald-400" />
-              Payments / Booking Audit
+            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-[#eaf7f1] text-[#16835f]">
+              <ViewIcon className="h-5 w-5" />
+            </div>
+            <h1 className="text-3xl font-extrabold tracking-tight text-[#17211d]">
+              {viewConfig.title}
             </h1>
-            <p className="text-slate-400 text-xs mt-1">
-              Review and manage payment records for one village community at a time.
+            <p className="mt-1.5 text-sm text-[#66756e]">
+              {viewConfig.subtitle}
             </p>
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+            <label className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-[#66756e]">
               <span className="mb-1.5 flex items-center gap-1.5">
-                <Building2 className="h-3.5 w-3.5 text-emerald-400" />
+                <Building2 className="h-3.5 w-3.5 text-[#16835f]" />
                 Village Community
               </span>
               <select
@@ -526,9 +624,10 @@ export default function AccountingDashboardPage() {
                   setStatusFilter('');
                   setMethodFilter('');
                   setCustomerFilter('');
+                  setPropertyFilter('');
                 }}
                 disabled={villages.length === 0}
-                className="min-w-64 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs font-bold normal-case tracking-normal text-slate-200 outline-none focus:border-emerald-500/50 disabled:opacity-50"
+                className="min-w-64 rounded-xl border border-[#d8e1dd] bg-white px-3 py-2.5 text-xs font-bold normal-case tracking-normal text-[#26352e] shadow-sm outline-none transition focus:border-[#79bda5] focus:ring-4 focus:ring-[#dff3eb] disabled:opacity-50"
               >
                 {villages.length === 0 ? (
                   <option value="">No assigned villages</option>
@@ -537,14 +636,16 @@ export default function AccountingDashboardPage() {
                 ))}
               </select>
             </label>
-            <button
-              onClick={handleExportCSV}
-              disabled={!selectedVillageId || loading}
-              className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900 px-4 py-2.5 text-xs font-semibold text-slate-200 shadow transition hover:border-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Download className="w-4 h-4" />
-              Export Village Ledger
-            </button>
+            {view === 'receipts' && (
+              <button
+                onClick={handleExportCSV}
+                disabled={!selectedVillageId || loading}
+                className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900 px-4 py-2.5 text-xs font-semibold text-slate-200 shadow transition hover:border-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Download className="w-4 h-4" />
+                Export Village Ledger
+              </button>
+            )}
           </div>
         </div>
 
@@ -561,8 +662,10 @@ export default function AccountingDashboardPage() {
           </div>
         )}
 
+        {view === 'dashboard' && (
+        <>
         {/* Audit Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
           <div className="p-5 rounded-2xl border border-slate-800 bg-slate-900/60 flex items-center gap-4 shadow glass-card">
             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shadow-inner">
               <Coins className="w-5 h-5" />
@@ -592,13 +695,55 @@ export default function AccountingDashboardPage() {
               <span className="text-2xl font-extrabold text-white mt-0.5">{verifiedCount} deposits</span>
             </div>
           </div>
+
+          <div className="p-5 rounded-2xl border border-slate-800 bg-slate-900/60 flex items-center gap-4 shadow glass-card">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center shadow-inner">
+              <FileCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Pending Documents</span>
+              <span className="text-2xl font-extrabold text-white mt-0.5">{pendingDocumentsCount}</span>
+            </div>
+          </div>
+
+          <div className="p-5 rounded-2xl border border-slate-800 bg-slate-900/60 flex items-center gap-4 shadow glass-card">
+            <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center shadow-inner">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Overdue Accounts</span>
+              <span className="text-2xl font-extrabold text-white mt-0.5">{overdueAccountsCount}</span>
+            </div>
+          </div>
         </div>
 
-        {/* Filtering Options */}
-        <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-4 flex flex-wrap gap-4 items-center glass-card">
+        <div className="grid gap-4 md:grid-cols-3">
+          {[
+            { title: 'Customer Account Ledger', description: 'Balances, monthly dues, and overdue accounts.', href: '/accounting/ledger/customer-accounts', icon: Users },
+            { title: 'Receipts Audit Ledger', description: 'Payment references, receipts, and audit actions.', href: '/accounting/ledger/receipts', icon: ReceiptText },
+            { title: 'Customer Documents', description: 'Review required documents before payment approval.', href: '/accounting/ledger/customer-documents', icon: FileCheck }
+          ].map((card) => {
+            const Icon = card.icon;
+            return (
+              <div key={card.href} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 shadow glass-card">
+                <Icon className="h-6 w-6 text-emerald-400" />
+                <h2 className="mt-4 text-base font-extrabold text-white">{card.title}</h2>
+                <p className="mt-1 min-h-10 text-xs leading-5 text-slate-500">{card.description}</p>
+                <Link href={card.href} className="mt-4 inline-flex min-h-10 items-center justify-center rounded-xl bg-emerald-600 px-4 text-xs font-extrabold text-white transition hover:bg-emerald-500">
+                  Open Ledger
+                </Link>
+              </div>
+            );
+          })}
+        </div>
+        </>
+        )}
+
+        {view === 'receipts' && (
+        <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-4 flex flex-wrap gap-3 items-center glass-card">
           <div className="flex items-center gap-1.5 text-slate-400 text-xs font-semibold select-none">
             <Filter className="w-4 h-4 text-emerald-400" />
-            <span>Filter Transactions:</span>
+            <span>Receipt Filters:</span>
           </div>
 
           <select
@@ -635,6 +780,43 @@ export default function AccountingDashboardPage() {
               </option>
             ))}
           </select>
+          <input value={referenceFilter} onChange={(event) => setReferenceFilter(event.target.value)} placeholder="Reference ID" className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs text-slate-300 outline-none" />
+          <input value={receiptFilter} onChange={(event) => setReceiptFilter(event.target.value)} placeholder="Receipt number" className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs text-slate-300 outline-none" />
+          <input type="date" value={receiptDateFrom} onChange={(event) => setReceiptDateFrom(event.target.value)} className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs text-slate-300 outline-none" />
+          <input type="date" value={receiptDateTo} onChange={(event) => setReceiptDateTo(event.target.value)} className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs text-slate-300 outline-none" />
+        </div>
+        )}
+
+        {view === 'documents' && (
+        <>
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-850 bg-slate-900/40 p-4 glass-card">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
+            <Filter className="h-4 w-4 text-emerald-400" />
+            Document Filters:
+          </div>
+          <select value={documentStatusFilter} onChange={(event) => setDocumentStatusFilter(event.target.value)} className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs text-slate-300 outline-none">
+            <option value="">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+          <select value={customerFilter} onChange={(event) => setCustomerFilter(event.target.value)} className="min-w-52 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs text-slate-300 outline-none">
+            <option value="">All customers</option>
+            {customerOptions.map((customer) => <option key={customer.key} value={customer.key}>{customer.name}</option>)}
+          </select>
+          <select value={documentTypeFilter} onChange={(event) => setDocumentTypeFilter(event.target.value)} className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs text-slate-300 outline-none">
+            <option value="">All document types</option>
+            {documentTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+          </select>
+          <select value={propertyFilter} onChange={(event) => setPropertyFilter(event.target.value)} className="min-w-52 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs text-slate-300 outline-none">
+            <option value="">All properties</option>
+            {propertyOptions.map((property) => <option key={property.id} value={property.id}>{property.label}</option>)}
+          </select>
+          <input type="date" value={documentDate} onChange={(event) => setDocumentDate(event.target.value)} className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs text-slate-300 outline-none" />
+          <label className="inline-flex items-center gap-2 text-xs font-bold text-slate-400">
+            <input type="checkbox" checked={pendingDocumentsOnly} onChange={(event) => setPendingDocumentsOnly(event.target.checked)} className="accent-emerald-500" />
+            Pending only
+          </label>
         </div>
 
         {/* Customer Documents Review */}
@@ -643,7 +825,7 @@ export default function AccountingDashboardPage() {
             <div>
               <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
                 <FileCheck className="w-4.5 h-4.5 text-emerald-400" />
-                Customer Documents Approval
+                Customer Documents
               </h3>
               <p className="mt-1 text-xs text-slate-500">
                 Approve required documents before verifying a customer&apos;s first payment.
@@ -743,8 +925,11 @@ export default function AccountingDashboardPage() {
             </table>
           </div>
         </div>
+        </>
+        )}
 
-        {/* Audit Ledger Table */}
+        {view === 'receipts' && (
+        /* Audit Ledger Table */
         <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 glass-card space-y-4">
           <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
             <CreditCard className="w-4.5 h-4.5 text-emerald-400" />
@@ -762,13 +947,14 @@ export default function AccountingDashboardPage() {
                   <th className="py-3 px-2">Transfer Method</th>
                   <th className="py-3 px-2">Reference ID</th>
                   <th className="py-3 px-2">Status</th>
+                  <th className="py-3 px-2">Receipt Number</th>
                   <th className="py-3 px-2 text-right">Audit Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/50 text-slate-300">
                 {filteredPayments.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="py-10 text-center text-xs font-semibold text-slate-500">
+                    <td colSpan={9} className="py-10 text-center text-xs font-semibold text-slate-500">
                       No accounting reservation payments found.
                     </td>
                   </tr>
@@ -798,6 +984,7 @@ export default function AccountingDashboardPage() {
                           {p.payment_status?.replace('_', ' ')}
                         </span>
                       </td>
+                      <td className="py-3.5 px-2 font-mono text-slate-500">{p.official_receipt_number || 'Not issued'}</td>
                       <td className="py-3.5 px-2 text-right">
                         {p.payment_status === 'pending_verification' ? (
                           <button
@@ -820,39 +1007,80 @@ export default function AccountingDashboardPage() {
             </table>
           </div>
         </div>
+        )}
+
+        {view === 'accounts' && (
+        <>
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-[#e1e7e4] bg-white p-4 shadow-[0_1px_2px_rgba(20,40,31,0.03)]">
+          <div className="mr-1 flex items-center gap-2 text-xs font-bold text-[#52635b]">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#eef7f3] text-[#16835f]">
+              <Filter className="h-4 w-4" />
+            </span>
+            Filters
+          </div>
+          <select value={customerFilter} onChange={(event) => setCustomerFilter(event.target.value)} className="min-w-52 rounded-xl border border-[#d8e1dd] bg-[#fbfcfb] px-3 py-2.5 text-xs font-medium text-[#34443d] outline-none transition focus:border-[#79bda5] focus:ring-4 focus:ring-[#e5f5ef]">
+            <option value="">All customers</option>
+            {customerOptions.map((customer) => <option key={customer.key} value={customer.key}>{customer.name}</option>)}
+          </select>
+          <select value={propertyFilter} onChange={(event) => setPropertyFilter(event.target.value)} className="min-w-52 rounded-xl border border-[#d8e1dd] bg-[#fbfcfb] px-3 py-2.5 text-xs font-medium text-[#34443d] outline-none transition focus:border-[#79bda5] focus:ring-4 focus:ring-[#e5f5ef]">
+            <option value="">All village properties</option>
+            {propertyOptions.map((property) => <option key={property.id} value={property.id}>{property.label}</option>)}
+          </select>
+          <select value={accountStatusFilter} onChange={(event) => setAccountStatusFilter(event.target.value)} className="rounded-xl border border-[#d8e1dd] bg-[#fbfcfb] px-3 py-2.5 text-xs font-medium text-[#34443d] outline-none transition focus:border-[#79bda5] focus:ring-4 focus:ring-[#e5f5ef]">
+            <option value="">All payment statuses</option>
+            <option value="current">Current</option>
+            <option value="due_soon">Due soon</option>
+            <option value="overdue">Overdue</option>
+            <option value="fully_paid">Fully paid</option>
+            <option value="no_due">No due</option>
+          </select>
+          <label className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-[#d8e1dd] bg-[#fbfcfb] px-3 text-xs font-bold text-[#52635b]">
+            <input type="checkbox" checked={overdueOnly} onChange={(event) => setOverdueOnly(event.target.checked)} className="accent-emerald-500" />
+            Overdue only
+          </label>
+          <input type="date" value={accountDateFrom} onChange={(event) => setAccountDateFrom(event.target.value)} className="rounded-xl border border-[#d8e1dd] bg-[#fbfcfb] px-3 py-2.5 text-xs text-[#52635b] outline-none transition focus:border-[#79bda5] focus:ring-4 focus:ring-[#e5f5ef]" />
+          <input type="date" value={accountDateTo} onChange={(event) => setAccountDateTo(event.target.value)} className="rounded-xl border border-[#d8e1dd] bg-[#fbfcfb] px-3 py-2.5 text-xs text-[#52635b] outline-none transition focus:border-[#79bda5] focus:ring-4 focus:ring-[#e5f5ef]" />
+          <select value={accountSort} onChange={(event) => setAccountSort(event.target.value)} className="rounded-xl border border-[#d8e1dd] bg-[#fbfcfb] px-3 py-2.5 text-xs font-medium text-[#34443d] outline-none transition focus:border-[#79bda5] focus:ring-4 focus:ring-[#e5f5ef]">
+            <option value="next_due">Sort by next due</option>
+            <option value="balance_desc">Balance: high to low</option>
+            <option value="balance_asc">Balance: low to high</option>
+          </select>
+        </div>
 
         {/* Customer Account Ledger */}
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 glass-card space-y-4">
+        <div className="space-y-5 rounded-2xl border border-[#e1e7e4] bg-white p-6 shadow-[0_8px_28px_rgba(26,52,40,0.045)]">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
-                <CalendarClock className="w-4.5 h-4.5 text-emerald-400" />
+              <h3 className="flex items-center gap-2 text-sm font-extrabold text-[#223129]">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#eef7f3] text-[#16835f]">
+                  <CalendarClock className="h-4 w-4" />
+                </span>
                 Customer Account Ledger
               </h3>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-2 text-xs text-[#718078]">
                 View customer balances, monthly dues, upcoming payments, and overdue accounts.
               </p>
             </div>
-            <span className="rounded-full border border-slate-800 bg-slate-950/50 px-3 py-1 text-[10px] font-extrabold uppercase text-slate-500">
+            <span className="rounded-full border border-[#d8e1dd] bg-[#f7f9f8] px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wide text-[#52635b]">
               {filteredAccountPlans.length} accounts
             </span>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-left text-xs font-medium border-collapse">
+            <table className="w-full min-w-[1080px] border-collapse text-left text-xs font-medium">
               <thead>
-                <tr className="border-b border-slate-800 text-slate-500 select-none">
-                  <th className="py-3 px-2">Customer</th>
+                <tr className="select-none border-y border-[#e5ebe8] bg-[#f8faf9] text-[10px] font-extrabold uppercase tracking-[0.08em] text-[#718078]">
+                  <th className="px-3 py-3.5">Customer</th>
                   <th className="py-3 px-2">Property</th>
                   <th className="py-3 px-2">Payable Balance</th>
                   <th className="py-3 px-2">Monthly Payment</th>
                   <th className="py-3 px-2">Next Due</th>
                   <th className="py-3 px-2">Overdue</th>
                   <th className="py-3 px-2">Status</th>
-                  <th className="py-3 px-2 text-right">Action</th>
+                  <th className="py-3 px-2 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/50 text-slate-300">
+              <tbody className="divide-y divide-[#e8edeb] text-[#34443d]">
                 {filteredAccountPlans.length === 0 && (
                   <tr>
                     <td colSpan={8} className="py-10 text-center text-xs font-semibold text-slate-500">
@@ -871,21 +1099,21 @@ export default function AccountingDashboardPage() {
                   const monthlyPayment = getLedgerMonthlyPayment(plan);
 
                   return (
-                    <tr key={plan.id} className="hover:bg-slate-950/20 transition-colors">
-                      <td className="py-3.5 px-2">
-                        <span className="block font-bold text-slate-200">{customer.full_name || reservation.guest_name || 'Guest Buyer'}</span>
-                        <span className="text-[10px] text-slate-500">{customer.email || reservation.guest_email || 'No email'}</span>
+                    <tr key={plan.id} className="transition-colors hover:bg-[#fafcfb]">
+                      <td className="px-3 py-4">
+                        <span className="block font-extrabold text-[#223129]">{customer.full_name || reservation.guest_name || 'Guest Buyer'}</span>
+                        <span className="mt-0.5 block text-[10px] text-[#7c8983]">{customer.email || reservation.guest_email || 'No email'}</span>
                       </td>
                       <td className="py-3.5 px-2">
-                        <span className="block font-bold text-slate-200">{property.property_code || reservation.reservation_code}</span>
-                        <span className="text-[10px] text-slate-500">{property.villages?.name || 'Village'} B{property.block_number || '-'} L{property.lot_number || '-'}</span>
+                        <span className="block font-bold text-[#34443d]">{property.property_code || reservation.reservation_code}</span>
+                        <span className="mt-0.5 block text-[10px] text-[#7c8983]">{property.villages?.name || 'Village'} B{property.block_number || '-'} L{property.lot_number || '-'}</span>
                       </td>
-                      <td className="py-3.5 px-2 font-extrabold text-white">{formatPeso(plan.remaining_balance)}</td>
+                      <td className="py-3.5 px-2 font-extrabold text-[#223129]">{formatPeso(plan.remaining_balance)}</td>
                       <td className="py-3.5 px-2">
                         {monthlyPayment > 0 ? (
                           <span>
-                            <span className="block font-bold text-slate-200">{formatPeso(monthlyPayment)}</span>
-                            <span className="text-[10px] text-slate-500">for {getLedgerTermMonths(plan)} months</span>
+                            <span className="block font-bold text-[#34443d]">{formatPeso(monthlyPayment)}</span>
+                            <span className="text-[10px] text-[#7c8983]">for {getLedgerTermMonths(plan)} months</span>
                           </span>
                         ) : (
                           'N/A'
@@ -893,7 +1121,7 @@ export default function AccountingDashboardPage() {
                       </td>
                       <td className="py-3.5 px-2">
                         <span className="block">{status.nextDue ? formatDate(status.nextDue.due_date) : 'No due scheduled'}</span>
-                        {status.nextDue && <span className="text-[10px] text-slate-500">{formatPeso(nextDueAmount)}</span>}
+                        {status.nextDue && <span className="block text-[10px] text-[#7c8983]">{formatPeso(nextDueAmount)}</span>}
                       </td>
                       <td className="py-3.5 px-2">
                         {status.overdueRows.length > 0 ? (
@@ -902,7 +1130,7 @@ export default function AccountingDashboardPage() {
                             {status.overdueRows.length} due / {formatPeso(overdueAmount)}
                           </span>
                         ) : (
-                          <span className="text-slate-500">None</span>
+                          <span className="text-[#7c8983]">None</span>
                         )}
                       </td>
                       <td className="py-3.5 px-2">
@@ -916,7 +1144,7 @@ export default function AccountingDashboardPage() {
                           type="button"
                           disabled={!status.nextDue || monthlyPayment <= 0}
                           onClick={() => openCashPayment(plan)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-white px-3 py-1.5 text-[10px] font-extrabold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[#d5ded9] bg-white px-3 text-[10px] font-extrabold text-[#405149] shadow-sm transition hover:border-[#aebdb6] hover:bg-[#f8faf9] disabled:cursor-not-allowed disabled:bg-[#f1f4f2] disabled:text-[#a5afa9] disabled:shadow-none"
                         >
                           <Coins className="w-3.5 h-3.5" />
                           Record Cash
@@ -926,10 +1154,18 @@ export default function AccountingDashboardPage() {
                           disabled={!plan.customer_id || !status.canNotify || notifyingPlanId === plan.id}
                           onClick={() => handleNotifyCustomer(plan)}
                           title={!plan.customer_id ? 'Guest reservations are not linked to a customer notification inbox.' : undefined}
-                          className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-[10px] font-extrabold text-emerald-600 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[#b7dfcf] bg-[#eef8f4] px-3 text-[10px] font-extrabold text-[#13795b] transition hover:border-[#8dcbb5] hover:bg-[#e3f4ed] disabled:cursor-not-allowed disabled:border-[#dce4e0] disabled:bg-[#f1f4f2] disabled:text-[#a5afa9]"
                         >
                           <BellRing className="w-3.5 h-3.5" />
                           {notifyingPlanId === plan.id ? 'Sending...' : 'Notify'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setStatementPlan(plan)}
+                          className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[#d5ded9] bg-[#f8faf9] px-3 text-[10px] font-extrabold text-[#405149] transition hover:border-[#aebdb6] hover:bg-[#f1f5f3]"
+                        >
+                          <BookOpen className="w-3.5 h-3.5" />
+                          View Statement
                         </button>
                         </div>
                       </td>
@@ -940,8 +1176,10 @@ export default function AccountingDashboardPage() {
             </table>
           </div>
         </div>
+        </>
+        )}
 
-        {cashPlan && (
+        {view === 'accounts' && cashPlan && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 backdrop-blur-sm">
             <form
               onSubmit={handleRecordCashPayment}
@@ -1023,8 +1261,56 @@ export default function AccountingDashboardPage() {
           </div>
         )}
 
+        {view === 'accounts' && statementPlan && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 backdrop-blur-sm">
+            <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-800 bg-white shadow-2xl">
+              <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600">Statement of Account</p>
+                  <h3 className="mt-1 text-lg font-extrabold text-slate-900">
+                    {statementPlan.reservations?.profiles?.full_name || statementPlan.reservations?.guest_name || 'Customer Account'}
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {statementPlan.reservations?.properties?.property_code || statementPlan.reservations?.reservation_code}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setStatementPlan(null)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">
+                  Close
+                </button>
+              </div>
+              <div className="grid gap-3 border-b border-slate-200 bg-slate-50 p-5 text-sm sm:grid-cols-3">
+                <div><p className="text-xs text-slate-500">Contract Price</p><p className="font-extrabold text-slate-900">{formatPeso(statementPlan.total_contract_price)}</p></div>
+                <div><p className="text-xs text-slate-500">Amount Paid</p><p className="font-extrabold text-slate-900">{formatPeso(statementPlan.amount_paid)}</p></div>
+                <div><p className="text-xs text-slate-500">Payable Balance</p><p className="font-extrabold text-slate-900">{formatPeso(statementPlan.remaining_balance)}</p></div>
+              </div>
+              <div className="max-h-[55vh] overflow-auto p-5">
+                <table className="w-full min-w-[620px] text-left text-xs">
+                  <thead><tr className="border-b border-slate-200 text-slate-500"><th className="py-2">Payment No.</th><th>Due Date</th><th>Amount Due</th><th>Amount Paid</th><th>Remaining</th><th>Status</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                    {getPlanSchedule(statementPlan).map((row) => (
+                      <tr key={row.id || row.due_number}>
+                        <td className="py-3">{row.due_number}</td>
+                        <td>{formatDate(row.due_date)}</td>
+                        <td>{formatPeso(row.amount_due)}</td>
+                        <td>{formatPeso(row.amount_paid)}</td>
+                        <td>{formatPeso(row.remaining_due)}</td>
+                        <td className="font-bold uppercase">{row.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex justify-end border-t border-slate-200 bg-slate-50 p-4">
+                <button type="button" onClick={() => window.print()} className="rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-extrabold text-white hover:bg-emerald-500">
+                  Print Statement
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Interactive Audit Verification Modal */}
-        {selectedPayment && (
+        {view === 'receipts' && selectedPayment && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-3 backdrop-blur-sm">
             <div className="relative z-10 flex max-h-[calc(100vh-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl glass-card animate-in fade-in zoom-in-95 duration-200">
               <div className="flex-shrink-0 border-b border-slate-850 bg-white/90 px-4 py-3 backdrop-blur">

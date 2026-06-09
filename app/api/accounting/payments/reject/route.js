@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { canManageVillagePayments } from '@/lib/auth/canManageVillagePayments';
+import { hasPermission } from '@/lib/auth/rbac';
+import { logAuditEvent } from '@/lib/audit/logAuditEvent';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +31,8 @@ export async function POST(request) {
     .eq('id', user.id)
     .single();
 
-  if (!['accounting', 'village_admin', 'super_admin'].includes(profile?.role)) {
+  if (!['accounting', 'village_admin', 'super_admin'].includes(profile?.role)
+    || !await hasPermission(admin, user.id, 'payments.reject')) {
     return json(403, { error: 'You do not have permission to reject payments.' });
   }
 
@@ -68,13 +71,16 @@ export async function POST(request) {
     .update({ status: 'available', updated_at: now })
     .eq('id', payment.reservations?.property_id);
 
-  await admin.from('audit_logs').insert({
-    user_id: user.id,
-    village_id: payment.village_id,
-    action: 'REJECT_PAYMENT',
-    entity_type: 'payment',
-    entity_id: payment.id,
-    metadata: { rejectionReason: rejectionReason.trim() }
+  await logAuditEvent({
+    admin,
+    request,
+    userId: user.id,
+    villageId: payment.village_id,
+    action: 'payment_rejected',
+    entityType: 'payment',
+    entityId: payment.id,
+    description: `Rejected payment for reservation ${payment.reservations?.reservation_code || payment.reservation_id}.`,
+    metadata: { rejection_reason: rejectionReason.trim() }
   });
 
   const customerId = payment.customer_id || payment.reservations?.customer_id;

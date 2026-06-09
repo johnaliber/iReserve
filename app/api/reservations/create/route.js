@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { createPaymentPlanForReservation, validatePaymentAmount } from '@/lib/payments/server';
 import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
+import { logAuditEvent } from '@/lib/audit/logAuditEvent';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -255,6 +256,42 @@ export async function POST(request) {
 
     const { error: docsError } = await admin.from('documents').insert(docsPayload);
     if (docsError) throw docsError;
+
+    await Promise.all([
+      logAuditEvent({
+        admin,
+        request,
+        userId: user?.id || null,
+        villageId: property.village_id,
+        action: 'reservation_created',
+        entityType: 'reservation',
+        entityId: reservation.id,
+        description: `Created reservation ${code}.`,
+        metadata: { property_id: property.id, payment_type: paymentType }
+      }),
+      logAuditEvent({
+        admin,
+        request,
+        userId: user?.id || null,
+        villageId: property.village_id,
+        action: 'payment_uploaded',
+        entityType: 'reservation',
+        entityId: reservation.id,
+        description: `Submitted the initial payment for reservation ${code}.`,
+        metadata: { payment_method: paymentMethod, payment_purpose: paymentPurpose }
+      }),
+      logAuditEvent({
+        admin,
+        request,
+        userId: user?.id || null,
+        villageId: property.village_id,
+        action: 'document_uploaded',
+        entityType: 'reservation',
+        entityId: reservation.id,
+        description: `Uploaded required documents for reservation ${code}.`,
+        metadata: { document_types: docsPayload.map((document) => document.document_type) }
+      })
+    ]);
 
     return json(200, { reservationCode: code, email });
   } catch (err) {

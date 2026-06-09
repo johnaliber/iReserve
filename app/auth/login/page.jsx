@@ -41,6 +41,7 @@ export default function LoginPage() {
       }
 
       if (data.user) {
+        await fetch('/api/auth/session-event', { method: 'POST' });
         const claimResponse = await fetch('/api/customer/claim-reservations', {
           method: 'POST'
         });

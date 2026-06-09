@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { canManageVillagePayments } from '@/lib/auth/canManageVillagePayments';
+import { hasPermission } from '@/lib/auth/rbac';
+import { logAuditEvent } from '@/lib/audit/logAuditEvent';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +35,11 @@ export async function POST(request) {
     .eq('id', user.id)
     .single();
 
-  if (!['accounting', 'village_admin', 'super_admin'].includes(profile?.role)) {
+  const requiredPermission = status === 'approved'
+    ? 'ledger.documents.approve'
+    : 'ledger.documents.reject';
+  if (!['accounting', 'village_admin', 'super_admin'].includes(profile?.role)
+    || !await hasPermission(admin, user.id, requiredPermission)) {
     return json(403, { error: 'You do not have permission to review documents.' });
   }
 
@@ -82,6 +88,18 @@ export async function POST(request) {
     })
     .eq('id', document.reservation_id)
     .in('status', ['pending_documents', 'pending_payment', 'pending_verification']);
+
+  await logAuditEvent({
+    admin,
+    request,
+    userId: user.id,
+    villageId,
+    action: status === 'approved' ? 'document_approved' : 'document_rejected',
+    entityType: 'document',
+    entityId: documentId,
+    description: `${status === 'approved' ? 'Approved' : 'Rejected'} ${document.document_type}.`,
+    metadata: status === 'rejected' ? { rejection_reason: rejectionReason.trim() } : {}
+  });
 
   if (document.customer_id) {
     await admin.from('notifications').insert({
