@@ -14,8 +14,6 @@ import {
   Home,
   LayoutDashboard,
   Map,
-  PanelLeftClose,
-  PanelLeftOpen,
   PencilRuler,
   ReceiptText,
   RotateCcw,
@@ -47,7 +45,7 @@ const superAdminNav = [
       { title: 'Accounting', href: '/super-admin/users?role=accounting', icon: WalletCards, roleFilter: 'accounting' },
       { title: 'Architects', href: '/super-admin/users?role=architect', icon: PencilRuler, roleFilter: 'architect' },
       { title: 'Customers', href: '/super-admin/users?role=customer', icon: UserRound, roleFilter: 'customer' },
-      { title: 'Guests', href: '/super-admin/users?role=guest', icon: UserRoundPlus, roleFilter: 'guest' }
+      // { title: 'Guests', href: '/super-admin/users?role=guest', icon: UserRoundPlus, roleFilter: 'guest' }
     ]
   },
   { title: 'Reservations', href: '/village-admin/reservations', icon: CalendarCheck },
@@ -170,24 +168,11 @@ export default function AdminSidebar({
           className="fixed inset-0 z-30 bg-[#17211d]/35 backdrop-blur-[1px] md:hidden"
         />
       )}
-      <button
-        type="button"
-        onClick={onToggleCollapse}
-        title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        className={`fixed top-4 z-[100] hidden h-8 w-8 items-center justify-center rounded-full border border-[#dbe4ee] bg-white text-[#52635b] shadow-md transition-[left,background-color,color] duration-300 hover:bg-[#f1f5f3] hover:text-[#17211d] md:inline-flex ${
-          isCollapsed ? 'left-[56px]' : 'left-[244px]'
-        }`}
-      >
-        {isCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-      </button>
-      <aside className={`fixed left-0 top-0 z-50 flex h-screen overflow-visible flex-col border-r border-[#dbe4ee] bg-white transition-[width,transform] duration-300 ${
+      <aside className={`fixed left-0 top-[58px] z-35 flex h-[calc(100vh-58px)] flex-col border-r border-[#dbe4ee] bg-white transition-[width,transform] duration-300 ${
         isCollapsed ? 'md:w-[72px]' : 'md:w-[260px]'
       } w-[260px] ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
-        <SidebarLogoHeader collapsed={isCollapsed} />
-        <div className={`relative z-10 flex-1 py-3 ${
-          isCollapsed ? 'overflow-visible px-0' : 'overflow-y-auto px-2'
-        }`}>
+        <SidebarLogoHeader collapsed={isCollapsed} onToggleCollapse={onToggleCollapse} />
+        <div className="flex-1 overflow-y-auto px-2 py-3">
           {!isCollapsed && (
             <p className="mb-2 px-3 text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#5f7068]">
               Navigation
