@@ -19,7 +19,7 @@ export default function CustomerMobileNav() {
       {links.map(({ label, href, icon: Icon }) => {
         const active = pathname === href;
         return (
-          <Link key={href} href={href} className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl text-[9px] font-bold ${active ? 'bg-emerald-50 text-emerald-700' : 'text-[#64748b]'}`}>
+          <Link key={href} href={href} className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-extrabold ${active ? 'bg-emerald-100 text-emerald-800' : 'text-[#475b52]'}`}>
             <Icon className="h-4.5 w-4.5" />
             <span>{label}</span>
           </Link>

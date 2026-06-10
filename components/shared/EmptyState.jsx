@@ -14,7 +14,7 @@ export default function EmptyState({
         <Icon className="h-7 w-7" />
       </span>
       <h2 className="mt-4 text-xl font-extrabold text-[#272727]">{title}</h2>
-      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#64748b]">{description}</p>
+      <p className="mx-auto mt-2 max-w-md text-sm font-medium leading-6 text-[#475b52]">{description}</p>
       {actionLabel && actionHref && (
         <Link href={actionHref} className="mt-6 inline-flex min-h-12 items-center justify-center rounded-xl bg-emerald-600 px-5 text-sm font-extrabold text-white shadow-sm transition hover:bg-emerald-500">
           {actionLabel}

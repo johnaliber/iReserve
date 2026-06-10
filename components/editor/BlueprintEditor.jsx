@@ -706,7 +706,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
   const selectedObject = objects.find(o => o.id === selectedObjectId);
 
   return (
-    <div className="h-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden relative">
+    <div className="blueprint-editor-compact h-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden relative">
       
       {/* 1. Header toolbar */}
       <EditorToolbar
@@ -735,7 +735,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
 
       {/* Save Status Notification Overlay */}
       {saveStatus && (
-        <div className="absolute top-16 left-1/2 transform -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 rounded-full border shadow-2xl backdrop-blur bg-slate-900/90 text-xs font-semibold select-none animate-bounce">
+        <div className="absolute top-14 left-1/2 transform -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-2 rounded-full border shadow-2xl backdrop-blur bg-slate-900/90 text-xs font-semibold select-none animate-bounce">
           {saveStatus === 'saving' && (
             <>
               <Loader2 className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
@@ -857,7 +857,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
               <PanelRightOpen className="mx-auto h-5 w-5" />
             </button>
           ) : (
-            <div className="w-[352px] flex-shrink-0 flex flex-col border-l border-slate-800/80 overflow-y-auto relative bg-slate-900">
+            <div className="w-[320px] flex-shrink-0 flex flex-col border-l border-slate-800/80 overflow-y-auto relative bg-slate-900">
               <button
                 onClick={() => setRightPanelCollapsed(true)}
                 title="Collapse details panel"
@@ -871,7 +871,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
                 onDeleteObject={handleDeleteObject}
                 villageId={villageId}
               />
-              <div className="border-t border-slate-800/80 bg-slate-900 p-4">
+              <div className="border-t border-slate-800/80 bg-slate-900 p-3">
                 <LayersPanel
                   objects={objects}
                   setObjects={updateObjectsWithHistory}

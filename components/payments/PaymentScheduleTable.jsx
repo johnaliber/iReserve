@@ -35,7 +35,7 @@ export default function PaymentScheduleTable({ rows = [], onPay }) {
         return (
           <article key={row.id} className="rounded-2xl border border-[#e2e8f0] bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3">
-              <div><p className="text-xs font-bold text-[#64748b]">Payment {row.due_number}</p><p className="mt-1 font-extrabold text-[#272727]">{formatDueDate(row.due_date)}</p><p className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-[#94a3b8]">MM-DD-YY</p></div>
+              <div><p className="text-xs font-bold text-[#475b52]">Payment {row.due_number}</p><p className="mt-1 font-extrabold text-[#272727]">{formatDueDate(row.due_date)}</p><p className="mt-0.5 text-[11px] font-bold uppercase tracking-wider text-[#5f7068]">MM-DD-YY</p></div>
               <FriendlyStatusBadge status={status} />
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
@@ -52,14 +52,14 @@ export default function PaymentScheduleTable({ rows = [], onPay }) {
       <table className="w-full min-w-[1050px] table-auto text-left text-sm">
         <thead className="bg-[#f8fafc] text-xs font-extrabold uppercase tracking-wider text-[#64748b]">
           <tr>
-            <th className="whitespace-nowrap px-5 py-4">Payment No.</th>
-            <th className="whitespace-nowrap px-5 py-4">Due Date <span className="normal-case tracking-normal text-[#94a3b8]">(MM-DD-YY)</span></th>
-            <th className="whitespace-nowrap px-5 py-4">Amount Due</th>
-            <th className="whitespace-nowrap px-5 py-4">Amount Paid</th>
-            <th className="whitespace-nowrap px-5 py-4">Remaining Balance</th>
-            <th className="whitespace-nowrap px-5 py-4">Status</th>
-            <th className="whitespace-nowrap px-5 py-4">Progress</th>
-            <th className="whitespace-nowrap px-5 py-4 text-right">Action</th>
+            <th className="whitespace-nowrap px-3 py-2.5">Payment No.</th>
+            <th className="whitespace-nowrap px-3 py-2.5">Due Date <span className="normal-case tracking-normal text-[#5f7068]">(MM-DD-YY)</span></th>
+            <th className="whitespace-nowrap px-3 py-2.5">Amount Due</th>
+            <th className="whitespace-nowrap px-3 py-2.5">Amount Paid</th>
+            <th className="whitespace-nowrap px-3 py-2.5">Remaining Balance</th>
+            <th className="whitespace-nowrap px-3 py-2.5">Status</th>
+            <th className="whitespace-nowrap px-3 py-2.5">Progress</th>
+            <th className="whitespace-nowrap px-3 py-2.5 text-right">Action</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[#e2e8f0]">
@@ -69,13 +69,13 @@ export default function PaymentScheduleTable({ rows = [], onPay }) {
             const canPay = onPay && ['unpaid', 'partially_paid', 'overdue'].includes(status) && Number(row.remaining_due || 0) > 0;
             return (
               <tr key={row.id}>
-                <td className="whitespace-nowrap px-5 py-4 font-bold text-[#272727]">{row.due_number}</td>
-                <td className="whitespace-nowrap px-5 py-4 text-[#64748b]">{formatDueDate(row.due_date)}</td>
-                <td className="whitespace-nowrap px-5 py-4">{formatPeso(row.amount_due)}</td>
-                <td className="whitespace-nowrap px-5 py-4">{formatPeso(row.amount_paid)}</td>
-                <td className="whitespace-nowrap px-5 py-4">{formatPeso(row.remaining_due)}</td>
-                <td className="whitespace-nowrap px-5 py-4"><FriendlyStatusBadge status={status} /></td>
-                <td className="whitespace-nowrap px-5 py-4">
+                <td className="whitespace-nowrap px-3 py-2.5 font-bold text-[#272727]">{row.due_number}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 text-[#64748b]">{formatDueDate(row.due_date)}</td>
+                <td className="whitespace-nowrap px-3 py-2.5">{formatPeso(row.amount_due)}</td>
+                <td className="whitespace-nowrap px-3 py-2.5">{formatPeso(row.amount_paid)}</td>
+                <td className="whitespace-nowrap px-3 py-2.5">{formatPeso(row.remaining_due)}</td>
+                <td className="whitespace-nowrap px-3 py-2.5"><FriendlyStatusBadge status={status} /></td>
+                <td className="whitespace-nowrap px-3 py-2.5">
                   <div className="flex min-w-28 items-center gap-2">
                     <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#e2e8f0]">
                       <div className="h-full rounded-full bg-emerald-500" style={{ width: `${progress}%` }} />
@@ -83,13 +83,13 @@ export default function PaymentScheduleTable({ rows = [], onPay }) {
                     <span className="w-10 text-right font-bold">{progress}%</span>
                   </div>
                 </td>
-                <td className="whitespace-nowrap px-5 py-4 text-right">
+                <td className="whitespace-nowrap px-3 py-2.5 text-right">
                   {canPay ? (
                     <button type="button" onClick={() => onPay(row)} className="font-bold text-emerald-600">
                       Pay Now
                     </button>
                   ) : (
-                    <span className="text-xs text-[#94a3b8]">-</span>
+                    <span className="text-xs font-medium text-[#5f7068]">-</span>
                   )}
                 </td>
               </tr>

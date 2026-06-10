@@ -7,7 +7,7 @@ export default function SiteViewingRequestCard({ viewing }) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="font-extrabold text-[#272727]">Block {property.block_number || '-'}, Lot {property.lot_number || '-'}</h3>
-          <p className="mt-1 text-sm text-[#64748b]">{viewing.villages?.name || 'Village'}</p>
+          <p className="mt-1 text-sm font-medium text-[#475b52]">{viewing.villages?.name || 'Village'}</p>
         </div>
         <div className="sm:text-right">
           <FriendlyStatusBadge status={viewing.status} />

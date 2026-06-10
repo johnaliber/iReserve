@@ -48,8 +48,8 @@ export default function PropertiesPanel({
 
   if (!selectedObject) {
     return (
-      <aside className="w-[352px] bg-slate-900 border-l border-slate-800/80 p-6 flex flex-col justify-center items-center text-center text-slate-500 select-none">
-        <HelpCircle className="w-10 h-10 mb-3 text-slate-700" />
+      <aside className="w-[320px] bg-slate-900 border-l border-slate-800/80 p-4 flex flex-col justify-center items-center text-center text-slate-500 select-none">
+        <HelpCircle className="w-8 h-8 mb-2 text-slate-700" />
         <h4 className="text-sm font-semibold text-slate-400">No Object Selected</h4>
         <p className="text-[11px] mt-1 leading-normal max-w-[160px]">
           Click any element on the blueprint workspace to inspect and edit its properties.
@@ -114,7 +114,7 @@ export default function PropertiesPanel({
   };
 
   return (
-    <aside className="w-[352px] bg-slate-900 border-l border-slate-800/80 p-5 flex flex-col select-none gap-5">
+    <aside className="w-[320px] bg-slate-900 border-l border-slate-800/80 p-4 flex flex-col select-none gap-3">
       <div className="flex items-center justify-between border-b border-slate-800 pb-3">
         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
           Properties Panel
@@ -226,7 +226,7 @@ export default function PropertiesPanel({
       </div>
 
       {isImageLayer && (
-        <div className="space-y-4 rounded-xl border border-sky-500/10 bg-sky-500/5 p-3.5">
+        <div className="space-y-3 rounded-xl border border-sky-500/10 bg-sky-500/5 p-3">
           <h5 className="text-[10px] font-bold text-sky-300 uppercase tracking-wider">Image Layer</h5>
           <div>
             <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
@@ -264,7 +264,7 @@ export default function PropertiesPanel({
 
       {/* RENDER FOR ROADS */}
       {object_type === 'road' && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div>
             <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
               Road Name
@@ -351,7 +351,7 @@ export default function PropertiesPanel({
 
       {/* RENDER FOR LOTS / HOUSES */}
       {(object_type === 'lot' || object_type === 'house') && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-xl p-3.5">
             <h5 className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1 mb-2">
               <LinkIcon className="w-3.5 h-3.5" />
@@ -466,7 +466,7 @@ export default function PropertiesPanel({
 
       {/* RENDER FOR ZONES */}
       {(object_type.startsWith('zone_') || object_type === 'zone') && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div>
             <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
               Zone Label / Name
@@ -513,7 +513,7 @@ export default function PropertiesPanel({
 
       {/* RENDER FOR OTHER ELEMENTS (TREES / TEXT) */}
       {object_type === 'label' && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div>
             <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
               Text Content
@@ -541,7 +541,7 @@ export default function PropertiesPanel({
       )}
 
       {['tree', 'street_light', 'guard_house', 'clubhouse', 'pool', 'park', 'amenity', 'landmark'].includes(object_type) && object_data.kind !== 'reference_image' && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div>
             <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
               Size Diameter (px)

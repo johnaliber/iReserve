@@ -14,11 +14,11 @@ export default function ReservationProgressSteps({ currentStep = 1 }) {
             <li key={step} className="flex flex-1 items-center last:flex-none">
               <div className="flex items-center gap-2">
                 <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-extrabold ${
-                  complete || active ? 'bg-emerald-600 text-white' : 'bg-[#f1f5f9] text-[#64748b]'
+                  complete || active ? 'bg-emerald-700 !text-white' : 'bg-[#e2e8f0] text-[#334155]'
                 }`}>
                   {complete ? <Check className="h-4 w-4" /> : number}
                 </span>
-                <span className={`whitespace-nowrap text-xs font-bold ${active ? 'text-emerald-700' : 'text-[#64748b]'}`}>
+                <span className={`whitespace-nowrap text-xs font-extrabold ${active ? 'text-emerald-800' : 'text-[#475569]'}`}>
                   {step}
                 </span>
               </div>

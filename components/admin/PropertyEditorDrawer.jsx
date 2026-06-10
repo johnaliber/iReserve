@@ -93,7 +93,7 @@ function Field({ label, required, children }) {
   );
 }
 
-const inputClass = 'w-full rounded-lg border border-[#dbe4ee] bg-white px-3 py-2.5 text-sm text-[#272727] shadow-sm outline-none transition placeholder:text-[#94a3b8] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15';
+const inputClass = 'w-full rounded-lg border border-[#dbe4ee] bg-white px-3 py-2 text-sm text-[#272727] shadow-sm outline-none transition placeholder:text-[#94a3b8] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15';
 const lockedInputClass = `${inputClass} cursor-not-allowed bg-[#f8fafc] text-[#64748b]`;
 const sectionClass = 'rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm';
 const acceptedImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
@@ -374,8 +374,8 @@ export default function PropertyEditorDrawer({
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-[#272727]/35 backdrop-blur-[2px]">
       <button className="flex-1 cursor-default" aria-label="Close property editor" onClick={onClose} />
-      <aside className="h-full w-full max-w-2xl overflow-y-auto border-l border-[#e2e8f0] bg-[#f8fafc] shadow-2xl">
-        <div className="sticky top-0 z-10 flex items-start justify-between border-b border-[#e2e8f0] bg-white/95 px-6 py-5 backdrop-blur">
+      <aside className="h-full w-full max-w-[520px] overflow-y-auto border-l border-[#e2e8f0] bg-[#f8fafc] shadow-2xl">
+        <div className="sticky top-0 z-10 flex items-start justify-between border-b border-[#e2e8f0] bg-white/95 px-5 py-4 backdrop-blur">
           <div>
             <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">{objectName}</p>
             <h2 className="text-xl font-extrabold text-[#272727]">{title}</h2>
@@ -390,7 +390,7 @@ export default function PropertyEditorDrawer({
           </button>
         </div>
 
-        <div className="space-y-6 px-6 py-5">
+        <div className="space-y-4 px-5 py-4">
           {error && (
             <div className="flex gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
               <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
@@ -416,7 +416,7 @@ export default function PropertyEditorDrawer({
                 Refresh Lot
               </button>
             </div>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Village Code" required>
                 <input className={`${inputClass} bg-[#f8fafc] font-bold uppercase`} value={form.village_code} readOnly />
               </Field>
@@ -457,7 +457,7 @@ export default function PropertyEditorDrawer({
             <p className="mt-1 text-xs font-semibold text-[#64748b]">
               Configured model fields are managed from Lot / House Detail Configurations.
             </p>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Configured Lot / House Type" required={!isLinked}>
                 <select className={inputClass} value={selectedPresetId} onChange={(e) => applyPreset(e.target.value)}>
                   <option value="">Choose a saved configuration</option>
@@ -493,7 +493,7 @@ export default function PropertyEditorDrawer({
 
           <section className={sectionClass}>
             <h3 className="text-sm font-extrabold text-[#272727]">Pricing</h3>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Price" required>
                 <input type="number" min="0" className={lockedInputClass} value={form.price} readOnly />
               </Field>
@@ -514,7 +514,7 @@ export default function PropertyEditorDrawer({
 
           <section className={sectionClass}>
             <h3 className="text-sm font-extrabold text-[#272727]">Lot Details</h3>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Lot Size" required>
                 <input type="number" min="0" className={lockedInputClass} value={form.lot_size} readOnly />
               </Field>
@@ -538,7 +538,7 @@ export default function PropertyEditorDrawer({
 
           <section className={sectionClass}>
             <h3 className="text-sm font-extrabold text-[#272727]">Risk & Environment</h3>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Status" required>
                 <select className={inputClass} value={form.status} onChange={(e) => updateField('status', e.target.value)}>
                   <option value="available">Available</option>
@@ -653,7 +653,7 @@ export default function PropertyEditorDrawer({
           </section>
         </div>
 
-        <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 border-t border-[#e2e8f0] bg-white/95 px-6 py-4 backdrop-blur">
+        <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-2 border-t border-[#e2e8f0] bg-white/95 px-5 py-3 backdrop-blur">
           <div className="flex gap-2">
             {isSuperAdmin && isLinked && (
               <>

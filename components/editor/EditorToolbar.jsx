@@ -44,7 +44,7 @@ export default function EditorToolbar({
   onLoadDemo
 }) {
   return (
-    <div className="h-14 flex-shrink-0 bg-white border-b border-slate-200/80 px-4 flex items-center justify-between gap-4 select-none z-20 shadow-sm">
+    <div className="editor-toolbar h-12 flex-shrink-0 bg-white border-b border-slate-200/80 px-3 flex items-center justify-between gap-3 select-none z-20 shadow-sm">
       
       {/* 1. Left Action: Undo, Redo, Zoom Controls */}
       <div className="flex items-center gap-1">

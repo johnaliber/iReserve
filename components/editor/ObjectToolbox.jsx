@@ -68,11 +68,11 @@ export default function ObjectToolbox({ activeTool, setActiveTool }) {
   const renderSection = (categoryName, categoryId) => {
     const filteredTools = tools.filter(t => t.category === categoryId);
     return (
-      <div className="space-y-1.5">
+      <div className="space-y-1">
         <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block px-2 mb-1.5">
           {categoryName}
         </span>
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-2 gap-1">
           {filteredTools.map((tool) => {
             const Icon = tool.icon;
             const isActive = activeTool === tool.id;
@@ -81,13 +81,13 @@ export default function ObjectToolbox({ activeTool, setActiveTool }) {
                 key={tool.id}
                 onClick={() => setActiveTool(tool.id)}
                 title={`${tool.name} (Shortcut: ${tool.shortcut})`}
-                className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-[10px] font-semibold transition group outline-none cursor-pointer ${
+                className={`flex flex-col items-center justify-center p-2 rounded-lg border text-[9px] font-semibold transition group outline-none cursor-pointer ${
                   isActive
                     ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                     : 'bg-slate-950/40 border-slate-900 text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
                 }`}
               >
-                <Icon className={`w-4.5 h-4.5 mb-1 group-hover:scale-110 transition-transform ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
+                <Icon className={`w-4 h-4 mb-1 group-hover:scale-110 transition-transform ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
                 <span className="truncate w-full text-center">{tool.name.split(' ')[0]}</span>
               </button>
             );
@@ -98,7 +98,7 @@ export default function ObjectToolbox({ activeTool, setActiveTool }) {
   };
 
   return (
-    <aside className="w-52 flex-shrink-0 bg-slate-900 border-r border-slate-800/80 p-4 flex flex-col gap-6 overflow-y-auto select-none">
+    <aside className="w-48 flex-shrink-0 bg-slate-900 border-r border-slate-800/80 p-3 flex flex-col gap-4 overflow-y-auto select-none">
       {renderSection('Controls', 'general')}
       <hr className="border-slate-800/60" />
       {renderSection('Subdivision Roads', 'roads')}

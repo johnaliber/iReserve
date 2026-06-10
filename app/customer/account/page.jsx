@@ -51,28 +51,28 @@ export default function CustomerAccountPage() {
         <header className="border-b border-[#e2e8f0] pb-5">
           <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-600">Your Profile</p>
           <h1 className="mt-1 text-3xl font-extrabold text-[#272727]">Account Settings</h1>
-          <p className="mt-1 text-sm text-[#64748b]">Keep your contact information current so the village team can reach you.</p>
+          <p className="mt-1 text-sm font-medium text-[#475b52]">Keep your contact information current so the village team can reach you.</p>
         </header>
 
         <form onSubmit={(event) => { event.preventDefault(); setConfirmSave(true); }} className="space-y-5 rounded-3xl border border-[#e2e8f0] bg-white p-6 shadow-sm">
           <label className="block text-sm font-bold text-[#475569]">
             Full Name
             <span className="relative block">
-              <User className="absolute left-4 top-5 h-4 w-4 text-[#94a3b8]" />
+              <User className="absolute left-4 top-5 h-4 w-4 text-[#5f7068]" />
               <input className={`${inputClass} pl-11`} value={form.full_name} onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))} required />
             </span>
           </label>
           <label className="block text-sm font-bold text-[#475569]">
             Email Address
             <span className="relative block">
-              <Mail className="absolute left-4 top-5 h-4 w-4 text-[#94a3b8]" />
+              <Mail className="absolute left-4 top-5 h-4 w-4 text-[#5f7068]" />
               <input className={`${inputClass} cursor-not-allowed bg-[#f8fafc] pl-11`} value={form.email} readOnly />
             </span>
           </label>
           <label className="block text-sm font-bold text-[#475569]">
             Phone Number
             <span className="relative block">
-              <Phone className="absolute left-4 top-5 h-4 w-4 text-[#94a3b8]" />
+              <Phone className="absolute left-4 top-5 h-4 w-4 text-[#5f7068]" />
               <input className={`${inputClass} pl-11`} value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} placeholder="+63 917 123 4567" />
             </span>
           </label>

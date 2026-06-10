@@ -10,7 +10,7 @@ export default function ReservationSummaryCard({ reservation, action }) {
             <h3 className="text-lg font-extrabold text-[#272727]">Block {property.block_number || '-'}, Lot {property.lot_number || '-'}</h3>
             <FriendlyStatusBadge status={reservation?.status} />
           </div>
-          <p className="mt-1 text-sm text-[#64748b]">{property.villages?.name || 'Village'}</p>
+          <p className="mt-1 text-sm font-medium text-[#475b52]">{property.villages?.name || 'Village'}</p>
         </div>
         {action}
       </div>

@@ -12,7 +12,7 @@ export default function NextStepCard({ title, description, actionLabel, actionHr
           <div>
             <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-700">Your Next Step</p>
             <h2 className="mt-1 text-xl font-extrabold text-[#272727]">{title}</h2>
-            <p className="mt-1 text-sm leading-6 text-[#64748b]">{description}</p>
+            <p className="mt-1 text-sm font-medium leading-6 text-[#475b52]">{description}</p>
           </div>
         </div>
         {actionHref && (

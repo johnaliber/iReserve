@@ -8,7 +8,6 @@ import {
   Building, 
   Search, 
   SlidersHorizontal, 
-  ExternalLink,
   Loader2,
   Compass,
   Sun,
@@ -19,9 +18,13 @@ import {
   CheckCircle2,
   Pencil,
   Plus,
-  Save
+  Save,
+  LayoutGrid,
+  List
 } from 'lucide-react';
-import Link from 'next/link';
+import Pagination from '@/components/shared/Pagination';
+
+const PROPERTY_PAGE_SIZE = 8;
 
 const EMPTY_PRESET = {
   name: '',
@@ -44,7 +47,7 @@ const EMPTY_PRESET = {
 function MiniField({ label, children }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-slate-300">
+      <span className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-slate-600">
         {label}
       </span>
       {children}
@@ -66,11 +69,14 @@ export default function VillageAdminPropertiesPage() {
   const [presetForm, setPresetForm] = useState(EMPTY_PRESET);
   const [editingPresetId, setEditingPresetId] = useState('');
   const [savingPreset, setSavingPreset] = useState(false);
+  const [presetViewMode, setPresetViewMode] = useState('grid');
   
   // Search and Filter State
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [viewMode, setViewMode] = useState('list');
+  const [page, setPage] = useState(1);
 
   const fetchProperties = useCallback(async (villageId) => {
     setLoading(true);
@@ -135,6 +141,7 @@ export default function VillageAdminPropertiesPage() {
   const handleVillageChange = (e) => {
     const vId = e.target.value;
     setSelectedVillageId(vId);
+    setPage(1);
     setMessage('');
     setError('');
     fetchProperties(vId);
@@ -360,15 +367,15 @@ export default function VillageAdminPropertiesPage() {
   const getStatusColor = (status) => {
     switch (status) {
       case 'available':
-        return 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+        return 'border border-emerald-200 bg-emerald-50 text-emerald-800';
       case 'reserved':
-        return 'bg-amber-500/10 text-amber-400 border border-amber-500/20';
+        return 'border border-amber-200 bg-amber-50 text-amber-800';
       case 'sold':
-        return 'bg-red-500/10 text-red-400 border border-red-500/20';
+        return 'border border-red-200 bg-red-50 text-red-800';
       case 'under_maintenance':
-        return 'bg-slate-500/10 text-slate-400 border border-slate-550';
+        return 'border border-[#cbd5e1] bg-[#f1f5f9] text-[#334155]';
       default:
-        return 'bg-slate-500/10 text-slate-400 border border-slate-550';
+        return 'border border-[#cbd5e1] bg-[#f1f5f9] text-[#334155]';
     }
   };
 
@@ -380,10 +387,16 @@ export default function VillageAdminPropertiesPage() {
     const matchesType = typeFilter ? p.property_type === typeFilter : true;
     return matchesSearch && matchesStatus && matchesType;
   });
+  const totalPropertyPages = Math.max(1, Math.ceil(filteredProperties.length / PROPERTY_PAGE_SIZE));
+  const currentPropertyPage = Math.min(page, totalPropertyPages);
+  const paginatedProperties = filteredProperties.slice(
+    (currentPropertyPage - 1) * PROPERTY_PAGE_SIZE,
+    currentPropertyPage * PROPERTY_PAGE_SIZE
+  );
 
   if (loading && villages.length === 0) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">
+      <div className="flex min-h-screen items-center justify-center bg-white text-slate-600">
         <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
       </div>
     );
@@ -394,24 +407,24 @@ export default function VillageAdminPropertiesPage() {
       <div className="space-y-6">
         
         {/* Header Title */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-900 pb-5">
+        <div className="flex flex-col justify-between gap-4 border-b border-[#e2e8f0] pb-4 md:flex-row md:items-center">
           <div>
-            <h1 className="text-3xl font-extrabold text-white flex items-center gap-2">
-              <Building className="w-8 h-8 text-emerald-400" />
+            <h1 className="flex items-center gap-2 text-2xl font-extrabold text-slate-900">
+              <Building className="h-6 w-6 text-emerald-600" />
               Properties Inventory
             </h1>
-            <p className="text-slate-400 text-xs mt-1">
+            <p className="mt-1 text-sm text-slate-600">
               Browse, search, and manage individual lot boundaries, pricing lists, and availability specifications.
             </p>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider select-none">Scope:</span>
+            <span className="select-none text-xs font-bold uppercase tracking-wider text-slate-600">Scope:</span>
             <select
               value={selectedVillageId}
               onChange={handleVillageChange}
               disabled={villages.length === 0}
-              className="bg-slate-900 border border-slate-800 rounded-xl py-2.5 px-4 text-xs font-semibold outline-none text-slate-200 cursor-pointer shadow"
+              className="cursor-pointer rounded-xl border border-[#dbe4ee] bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
             >
               {villages.length === 0 ? (
                 <option value="">No active villages found</option>
@@ -436,35 +449,67 @@ export default function VillageAdminPropertiesPage() {
           </div>
         )}
 
-        <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-5 shadow glass-card">
+        <div className="rounded-2xl border border-[#dbe4ee] bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <h2 className="text-base font-extrabold text-white">Lot / House Detail Configurations</h2>
-              <p className="mt-1 text-xs text-slate-400">
+              <h2 className="text-base font-extrabold text-slate-900">Lot / House Detail Configurations</h2>
+              <p className="mt-1 text-sm text-slate-600">
                 Create reusable property presets so new lots can auto-fill type, size, price, reservation fee, and interest rate.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={handleNewPreset}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-extrabold text-white shadow transition hover:bg-emerald-500"
-            >
-              <Plus className="h-4 w-4" />
-              Add Configuration
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 items-center rounded-xl border border-[#dbe4ee] bg-white p-1" role="group" aria-label="Configuration view">
+                <button
+                  type="button"
+                  onClick={() => setPresetViewMode('grid')}
+                  aria-label="Show configurations in grid view"
+                  aria-pressed={presetViewMode === 'grid'}
+                  title="Grid view"
+                  className={`inline-flex h-7 w-8 items-center justify-center rounded-lg transition ${
+                    presetViewMode === 'grid'
+                      ? 'bg-emerald-600 text-white'
+                      : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'
+                  }`}
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPresetViewMode('list')}
+                  aria-label="Show configurations in list view"
+                  aria-pressed={presetViewMode === 'list'}
+                  title="List view"
+                  className={`inline-flex h-7 w-8 items-center justify-center rounded-lg transition ${
+                    presetViewMode === 'list'
+                      ? 'bg-emerald-600 text-white'
+                      : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'
+                  }`}
+                >
+                  <List className="h-4 w-4" />
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={handleNewPreset}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-extrabold text-white shadow transition hover:bg-emerald-500"
+              >
+                <Plus className="h-4 w-4" />
+                Add Configuration
+              </button>
+            </div>
           </div>
 
           {showPresetForm && (
-            <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+            <div className="mt-4 rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-4">
               <div className="mb-4 flex items-center justify-between gap-3">
-                <h3 className="text-sm font-extrabold text-white">
+                <h3 className="text-sm font-extrabold text-slate-900">
                   {editingPresetId ? 'Edit Lot / House Configuration' : 'New Lot / House Configuration'}
                 </h3>
                 {editingPresetId && (
                   <button
                     type="button"
                     onClick={handleNewPreset}
-                    className="rounded-lg border border-slate-800 px-3 py-1.5 text-xs font-bold text-slate-300 transition hover:bg-slate-900"
+                    className="rounded-lg border border-[#cbd5e1] bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-[#f1f5f9]"
                   >
                     Cancel Edit
                   </button>
@@ -474,10 +519,10 @@ export default function VillageAdminPropertiesPage() {
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 mt-1">Identity</p>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
                 <MiniField label="Configuration Name">
-                  <input className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 outline-none" placeholder="e.g. Verdant 50sqm" value={presetForm.name} onChange={(e) => updatePresetField('name', e.target.value)} />
+                  <input className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="e.g. Verdant 50sqm" value={presetForm.name} onChange={(e) => updatePresetField('name', e.target.value)} />
                 </MiniField>
                 <MiniField label="Property Type">
-                  <select className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 outline-none" value={presetForm.property_type} onChange={(e) => updatePresetField('property_type', e.target.value)}>
+                  <select className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" value={presetForm.property_type} onChange={(e) => updatePresetField('property_type', e.target.value)}>
                     <option value="lot">Lot</option>
                     <option value="house_and_lot">House and Lot</option>
                     <option value="townhouse">Townhouse</option>
@@ -486,51 +531,51 @@ export default function VillageAdminPropertiesPage() {
                   </select>
                 </MiniField>
                 <MiniField label="Model Name">
-                  <input className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 outline-none" placeholder="e.g. Verdant" value={presetForm.model_name} onChange={(e) => updatePresetField('model_name', e.target.value)} />
+                  <input className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="e.g. Verdant" value={presetForm.model_name} onChange={(e) => updatePresetField('model_name', e.target.value)} />
                 </MiniField>
                 <MiniField label="Price">
-                  <input type="number" min="0" className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 outline-none" placeholder="3000000" value={presetForm.price} onChange={(e) => updatePresetField('price', e.target.value)} />
+                  <input type="number" min="0" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="3000000" value={presetForm.price} onChange={(e) => updatePresetField('price', e.target.value)} />
                 </MiniField>
               </div>
 
               {/* Pricing & Financing Fields */}
-              <div className="border-t border-slate-800/60 mt-4 pt-3">
+              <div className="mt-4 border-t border-[#e2e8f0] pt-3">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Pricing & Financing</p>
               </div>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
                 <MiniField label="Reservation Fee">
-                  <input type="number" min="0" className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 outline-none" placeholder="5000" value={presetForm.reservation_fee} onChange={(e) => updatePresetField('reservation_fee', e.target.value)} />
+                  <input type="number" min="0" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="5000" value={presetForm.reservation_fee} onChange={(e) => updatePresetField('reservation_fee', e.target.value)} />
                 </MiniField>
                 <MiniField label="Interest Rate (%)">
-                  <input type="number" min="0" step="0.01" className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 outline-none" placeholder="0" value={presetForm.interest_rate} onChange={(e) => updatePresetField('interest_rate', e.target.value)} />
+                  <input type="number" min="0" step="0.01" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="0" value={presetForm.interest_rate} onChange={(e) => updatePresetField('interest_rate', e.target.value)} />
                 </MiniField>
                 <MiniField label="Downpayment (%)">
-                  <input type="number" min="0" max="100" step="0.01" className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 outline-none" placeholder="20" value={presetForm.downpayment_percentage} onChange={(e) => updatePresetField('downpayment_percentage', e.target.value)} />
+                  <input type="number" min="0" max="100" step="0.01" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="20" value={presetForm.downpayment_percentage} onChange={(e) => updatePresetField('downpayment_percentage', e.target.value)} />
                 </MiniField>
                 <MiniField label="Default Loan Term (years)">
-                  <input type="number" min="1" className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 outline-none" placeholder="15" value={presetForm.default_loan_term_years} onChange={(e) => updatePresetField('default_loan_term_years', e.target.value)} />
+                  <input type="number" min="1" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="15" value={presetForm.default_loan_term_years} onChange={(e) => updatePresetField('default_loan_term_years', e.target.value)} />
                 </MiniField>
               </div>
 
               {/* Property Specs Fields */}
-              <div className="border-t border-slate-800/60 mt-4 pt-3">
+              <div className="mt-4 border-t border-[#e2e8f0] pt-3">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Property Specifications</p>
               </div>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
                 <MiniField label="Lot Size (sqm)">
-                  <input type="number" min="0" className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 outline-none" placeholder="50" value={presetForm.lot_size} onChange={(e) => updatePresetField('lot_size', e.target.value)} />
+                  <input type="number" min="0" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="50" value={presetForm.lot_size} onChange={(e) => updatePresetField('lot_size', e.target.value)} />
                 </MiniField>
                 <MiniField label="Floor Area (sqm)">
-                  <input type="number" min="0" className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 outline-none" placeholder="50" value={presetForm.floor_area} onChange={(e) => updatePresetField('floor_area', e.target.value)} />
+                  <input type="number" min="0" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="50" value={presetForm.floor_area} onChange={(e) => updatePresetField('floor_area', e.target.value)} />
                 </MiniField>
                 <MiniField label="Bedrooms">
-                  <input type="number" min="0" className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 outline-none" placeholder="1" value={presetForm.bedrooms} onChange={(e) => updatePresetField('bedrooms', e.target.value)} />
+                  <input type="number" min="0" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="1" value={presetForm.bedrooms} onChange={(e) => updatePresetField('bedrooms', e.target.value)} />
                 </MiniField>
                 <MiniField label="Bathrooms">
-                  <input type="number" min="0" className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 outline-none" placeholder="1" value={presetForm.bathrooms} onChange={(e) => updatePresetField('bathrooms', e.target.value)} />
+                  <input type="number" min="0" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="1" value={presetForm.bathrooms} onChange={(e) => updatePresetField('bathrooms', e.target.value)} />
                 </MiniField>
                 <MiniField label="Parking Slots">
-                  <input type="number" min="0" className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 outline-none" placeholder="1" value={presetForm.parking_slots} onChange={(e) => updatePresetField('parking_slots', e.target.value)} />
+                  <input type="number" min="0" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="1" value={presetForm.parking_slots} onChange={(e) => updatePresetField('parking_slots', e.target.value)} />
                 </MiniField>
               </div>
               <div className="mt-4 flex justify-end">
@@ -547,23 +592,90 @@ export default function VillageAdminPropertiesPage() {
             </div>
           )}
 
+          {presetViewMode === 'list' && presets.length > 0 ? (
+            <div className="mt-5 overflow-x-auto rounded-xl border border-[#dbe4ee] bg-white">
+              <table className="w-full min-w-[900px] text-left text-xs">
+                <thead>
+                  <tr className="border-b border-[#e2e8f0] bg-[#f8fafc] text-[10px] font-extrabold uppercase tracking-wider text-slate-600">
+                    <th className="px-3 py-2.5">Configuration</th>
+                    <th className="px-3 py-2.5">Price & Reserve</th>
+                    <th className="px-3 py-2.5">Financing</th>
+                    <th className="px-3 py-2.5">Area</th>
+                    <th className="px-3 py-2.5">Rooms</th>
+                    <th className="px-3 py-2.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#e2e8f0]">
+                  {presets.map((preset) => (
+                    <tr key={preset.id} className="bg-white text-slate-700 transition-colors hover:bg-[#f8fafc]">
+                      <td className="px-3 py-2.5">
+                        <p className="font-extrabold text-slate-900">{preset.name}</p>
+                        <p className="mt-0.5 text-[10px] font-bold uppercase text-emerald-700">
+                          {preset.property_type?.replaceAll('_', ' ')}
+                        </p>
+                      </td>
+                      <td className="px-3 py-2.5 font-semibold">
+                        <p>Price: PHP {Number(preset.price || 0).toLocaleString()}</p>
+                        <p className="mt-0.5 text-slate-600">Reserve: PHP {Number(preset.reservation_fee || 0).toLocaleString()}</p>
+                      </td>
+                      <td className="px-3 py-2.5 font-semibold">
+                        <p>{Number(preset.interest_rate || 0)}% interest</p>
+                        <p className="mt-0.5 text-slate-600">
+                          {Number(preset.downpayment_percentage || 0)}% down, {Number(preset.default_loan_term_years || 0)} yrs
+                        </p>
+                      </td>
+                      <td className="px-3 py-2.5 font-semibold">
+                        <p>Lot: {preset.lot_size || 0} sqm</p>
+                        <p className="mt-0.5 text-slate-600">Floor: {preset.floor_area || 0} sqm</p>
+                      </td>
+                      <td className="px-3 py-2.5 font-semibold">
+                        {preset.bedrooms || 0}BR / {preset.bathrooms || 0}BA
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleEditPreset(preset)}
+                            className="rounded-lg border border-emerald-200 p-1.5 text-emerald-700 transition hover:bg-emerald-50"
+                            title="Edit configuration"
+                            aria-label={`Edit ${preset.name}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePreset(preset)}
+                            className="rounded-lg border border-rose-200 p-1.5 text-rose-700 transition hover:bg-rose-50"
+                            title="Delete configuration"
+                            aria-label={`Delete ${preset.name}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
           <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
             {presets.length === 0 ? (
-              <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-4 text-xs font-semibold text-slate-500">
+              <div className="rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-4 text-xs font-semibold text-slate-600">
                 No configurations yet.
               </div>
             ) : presets.map((preset) => (
-              <div key={preset.id} className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+              <div key={preset.id} className="rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-extrabold text-white">{preset.name}</h3>
-                    <p className="mt-1 text-[10px] font-bold uppercase text-emerald-400">{preset.property_type?.replaceAll('_', ' ')}</p>
+                    <h3 className="text-sm font-extrabold text-slate-900">{preset.name}</h3>
+                    <p className="mt-1 text-[10px] font-bold uppercase text-emerald-700">{preset.property_type?.replaceAll('_', ' ')}</p>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => handleEditPreset(preset)}
-                      className="rounded-lg border border-emerald-500/20 p-1.5 text-emerald-400 transition hover:bg-emerald-500/10"
+                      className="rounded-lg border border-emerald-200 p-1.5 text-emerald-700 transition hover:bg-emerald-50"
                       title="Edit configuration"
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -571,14 +683,14 @@ export default function VillageAdminPropertiesPage() {
                     <button
                       type="button"
                       onClick={() => handleDeletePreset(preset)}
-                      className="rounded-lg border border-rose-500/20 p-1.5 text-rose-400 transition hover:bg-rose-500/10"
+                      className="rounded-lg border border-rose-200 p-1.5 text-rose-700 transition hover:bg-rose-50"
                       title="Delete configuration"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] font-semibold text-slate-400">
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-700">
                   <span>Price: ₱{Number(preset.price || 0).toLocaleString()}</span>
                   <span>Reserve: ₱{Number(preset.reservation_fee || 0).toLocaleString()}</span>
                   <span>Interest: {Number(preset.interest_rate || 0)}%</span>
@@ -591,26 +703,33 @@ export default function VillageAdminPropertiesPage() {
               </div>
             ))}
           </div>
+          )}
         </div>
 
         {/* Filters Tool bar */}
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 shadow glass-card grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
-          <div className="relative md:col-span-2">
+        <div className="grid grid-cols-1 items-center gap-3 rounded-2xl border border-[#dbe4ee] bg-white p-3 shadow-sm md:grid-cols-[minmax(260px,2fr)_1fr_1fr_auto]">
+          <div className="relative">
             <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-500" />
             <input
               type="text"
               placeholder="Search by lot code or block/lot (e.g. B1L2)..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-950/50 border border-slate-800 focus:border-emerald-500/50 rounded-xl py-2.5 pl-10 pr-4 text-xs text-slate-200 outline-none placeholder-slate-650"
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
+              className="w-full rounded-xl border border-[#dbe4ee] bg-white py-2 pl-10 pr-4 text-sm text-slate-800 outline-none placeholder:text-slate-500 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
             />
           </div>
 
           <div>
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full bg-slate-950/50 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-350 outline-none cursor-pointer"
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
+              className="w-full cursor-pointer rounded-xl border border-[#dbe4ee] bg-white p-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
             >
               <option value="">All Statuses</option>
               <option value="available">Available</option>
@@ -623,8 +742,11 @@ export default function VillageAdminPropertiesPage() {
           <div>
             <select
               value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="w-full bg-slate-950/50 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-350 outline-none cursor-pointer"
+              onChange={(e) => {
+                setTypeFilter(e.target.value);
+                setPage(1);
+              }}
+              className="w-full cursor-pointer rounded-xl border border-[#dbe4ee] bg-white p-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
             >
               <option value="">All Lot Types</option>
               <option value="house_and_lot">House & Lot</option>
@@ -634,10 +756,37 @@ export default function VillageAdminPropertiesPage() {
               <option value="commercial_lot">Commercial</option>
             </select>
           </div>
+
+          <div className="flex h-9 items-center rounded-xl border border-[#dbe4ee] bg-white p-1" role="group" aria-label="Property view">
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              aria-label="Show properties in grid view"
+              aria-pressed={viewMode === 'grid'}
+              title="Grid view"
+              className={`inline-flex h-7 w-8 items-center justify-center rounded-lg transition ${
+                viewMode === 'grid' ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'
+              }`}
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              aria-label="Show properties in list view"
+              aria-pressed={viewMode === 'list'}
+              title="List view"
+              className={`inline-flex h-7 w-8 items-center justify-center rounded-lg transition ${
+                viewMode === 'list' ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'
+              }`}
+            >
+              <List className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {/* Properties inventory Table */}
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 glass-card shadow">
+        <div className="rounded-2xl border border-[#dbe4ee] bg-white p-4 shadow-sm">
           {loading ? (
             <div className="py-12 flex justify-center text-slate-400">
               <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
@@ -648,11 +797,68 @@ export default function VillageAdminPropertiesPage() {
               <h4 className="text-sm font-semibold text-slate-450">No lots found matching query</h4>
               <p className="text-[11px] mt-1">Try expanding your filters or search keywords.</p>
             </div>
+          ) : viewMode === 'grid' ? (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {paginatedProperties.map((p) => (
+                <article key={p.id} className="rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-extrabold text-slate-900">{p.property_code}</p>
+                      <p className="mt-0.5 text-xs font-medium text-slate-600">
+                        Block {p.block_number} Lot {p.lot_number}
+                      </p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-extrabold uppercase ${getStatusColor(p.status)}`}>
+                      {p.status?.replaceAll('_', ' ')}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                    <div>
+                      <p className="font-semibold text-slate-500">Model</p>
+                      <p className="mt-0.5 font-bold text-slate-800">{p.model_name || 'Premium Lot Only'}</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-500">Type</p>
+                      <p className="mt-0.5 font-bold capitalize text-slate-800">{p.property_type?.replaceAll('_', ' ')}</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-500">Area</p>
+                      <p className="mt-0.5 font-bold text-slate-800">{p.lot_size} sqm</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-500">Price</p>
+                      <p className="mt-0.5 font-bold text-slate-800">PHP {Number(p.price || 0).toLocaleString()}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center gap-3 border-t border-slate-100 pt-3 text-[10px] font-semibold text-slate-600">
+                    <span className="inline-flex items-center gap-1">
+                      <ShieldAlert className={`h-3.5 w-3.5 ${p.flood_risk === 'high' ? 'text-red-500' : p.flood_risk === 'medium' ? 'text-amber-500' : 'text-emerald-600'}`} />
+                      Flood: {p.flood_risk}
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <Sun className="h-3.5 w-3.5 text-amber-500" />
+                      {p.sunlight_exposure}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteProperty(p)}
+                      disabled={deletingId === p.id}
+                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-3 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {deletingId === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                      Delete
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs font-semibold border-collapse">
+              <table className="w-full border-collapse text-left text-xs font-semibold">
                 <thead>
-                  <tr className="border-b border-slate-800 text-slate-500 select-none uppercase tracking-wider text-[10px]">
+                  <tr className="select-none border-b border-[#e2e8f0] bg-[#f8fafc] text-[10px] uppercase tracking-wider text-slate-600">
                     <th className="py-3 px-3">Lot Code</th>
                     <th className="py-3 px-3">Location Block/Lot</th>
                     <th className="py-3 px-3">Property Model</th>
@@ -663,34 +869,34 @@ export default function VillageAdminPropertiesPage() {
                     <th className="py-3 px-3 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-850 text-slate-300">
-                  {filteredProperties.map((p) => (
-                    <tr key={p.id} className="hover:bg-slate-950/20 transition-colors">
-                      <td className="py-3.5 px-3 font-extrabold text-white">{p.property_code}</td>
-                      <td className="py-3.5 px-3 text-slate-400">Block {p.block_number} Lot {p.lot_number}</td>
+                <tbody className="divide-y divide-[#e2e8f0] text-slate-700">
+                  {paginatedProperties.map((p) => (
+                    <tr key={p.id} className="bg-white transition-colors hover:bg-[#f8fafc]">
+                      <td className="px-3 py-3 font-extrabold text-slate-900">{p.property_code}</td>
+                      <td className="px-3 py-3 text-slate-700">Block {p.block_number} Lot {p.lot_number}</td>
                       <td className="py-3.5 px-3">
-                        <span className="text-slate-200 block">{p.model_name || 'Premium Lot Only'}</span>
-                        <span className="text-[10px] text-slate-500 capitalize">{p.property_type?.replace(/_/g, ' ')}</span>
+                        <span className="block text-slate-900">{p.model_name || 'Premium Lot Only'}</span>
+                        <span className="text-[10px] capitalize text-slate-600">{p.property_type?.replace(/_/g, ' ')}</span>
                       </td>
-                      <td className="py-3.5 px-3 text-slate-350">
+                      <td className="px-3 py-3 text-slate-700">
                         {p.lot_size} sqm
-                        {p.floor_area > 0 && <span className="text-[10px] text-slate-500 block">Floor: {p.floor_area} sqm</span>}
+                        {p.floor_area > 0 && <span className="block text-[10px] text-slate-600">Floor: {p.floor_area} sqm</span>}
                       </td>
-                      <td className="py-3.5 px-3 font-bold text-white">
+                      <td className="px-3 py-3 font-bold text-slate-900">
                         ₱{p.price?.toLocaleString()}
                         <span className="text-[10px] text-emerald-400 block font-normal flex items-center gap-0.5">
                           <Coins className="w-3 h-3" /> Dep: ₱{p.reservation_fee?.toLocaleString()}
                         </span>
-                        <span className="text-[10px] text-slate-500 block font-normal">
+                        <span className="block text-[10px] font-normal text-slate-600">
                           Interest: {Number(p.interest_rate || 0)}%
                         </span>
                       </td>
                       <td className="py-3.5 px-3 space-y-1">
-                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-700">
                           <ShieldAlert className={`w-3.5 h-3.5 ${p.flood_risk === 'high' ? 'text-red-400' : p.flood_risk === 'medium' ? 'text-amber-400' : 'text-emerald-400'}`} />
                           <span>Flood: <span className="capitalize">{p.flood_risk}</span></span>
                         </div>
-                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-700">
                           <Sun className="w-3.5 h-3.5 text-amber-400" />
                           <span>Sunlight: <span className="capitalize">{p.sunlight_exposure}</span></span>
                         </div>
@@ -701,14 +907,7 @@ export default function VillageAdminPropertiesPage() {
                         </span>
                       </td>
                       <td className="py-3.5 px-3 text-right">
-                        <div className="flex justify-end gap-2">
-                          <Link
-                            href="/village-admin/dashboard"
-                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-950 border border-slate-850 hover:border-emerald-500/30 hover:bg-slate-800/30 text-emerald-400 font-bold rounded-lg transition"
-                          >
-                            Modify live
-                            <ExternalLink className="w-3 h-3" />
-                          </Link>
+                        <div className="flex justify-end">
                           <button
                             type="button"
                             onClick={() => handleDeleteProperty(p)}
@@ -724,6 +923,17 @@ export default function VillageAdminPropertiesPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+          {!loading && filteredProperties.length > 0 && (
+            <div className="mt-4">
+              <Pagination
+                currentPage={currentPropertyPage}
+                totalItems={filteredProperties.length}
+                pageSize={PROPERTY_PAGE_SIZE}
+                onPageChange={setPage}
+                itemLabel="properties"
+              />
             </div>
           )}
         </div>

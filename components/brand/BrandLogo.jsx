@@ -9,7 +9,7 @@ export default function BrandLogo({ compact = false, className = '' }) {
         fill
         priority
         sizes={compact ? '96px' : '144px'}
-        className="object-contain object-left"
+        className="object-contain object-center"
       />
     </span>
   );

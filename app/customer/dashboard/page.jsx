@@ -219,10 +219,10 @@ export default function CustomerDashboardPage() {
         
         <div className="rounded-3xl border border-[#e2e8f0] bg-gradient-to-r from-white to-emerald-50 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-white">
+            <h1 className="text-2xl md:text-3xl font-extrabold text-[#17211d]">
               Welcome back
             </h1>
-            <p className="text-slate-400 text-xs mt-1 leading-normal">
+            <p className="mt-1 text-sm font-medium leading-5 text-[#475b52]">
               Here is a simple overview of your reservation and what to do next.
             </p>
           </div>
@@ -257,7 +257,7 @@ export default function CustomerDashboardPage() {
               {/* Active Reservations Card */}
               <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 glass-card space-y-4">
                 <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2 mb-2">
-                  <Inbox className="w-4.5 h-4.5 text-emerald-400" />
+                  <Inbox className="w-4.5 h-4.5 text-emerald-700" />
                   Active Land Reservations ({reservations.length})
                 </h3>
 
@@ -293,11 +293,11 @@ export default function CustomerDashboardPage() {
                             <FriendlyStatusBadge status={res.status} />
                           </div>
                           
-                          <p className="text-[11px] text-slate-400 font-medium">
+                          <p className="text-xs font-semibold text-[#475b52]">
                             {prop.villages?.name} • Facing {prop.orientation} • {prop.lot_size} sqm area
                           </p>
                           
-                          <div className="flex items-center gap-3 text-[10px] text-slate-500 pt-1">
+                          <div className="flex items-center gap-3 pt-1 text-xs font-medium text-[#52635b]">
                             <span className="flex items-center gap-1">
                               <Coins className="w-3.5 h-3.5 text-emerald-500/60" />
                               Deposit: ₱{res.reservation_fee?.toLocaleString()}
@@ -319,23 +319,23 @@ export default function CustomerDashboardPage() {
               {/* Recent payments */}
               <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 glass-card space-y-4">
                 <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2 mb-2">
-                  <Coins className="w-4.5 h-4.5 text-emerald-400" />
+                  <Coins className="w-4.5 h-4.5 text-emerald-700" />
                   Recent Payments
                 </h3>
 
                 <div className="divide-y divide-slate-800/60 text-xs">
                   {payments.length === 0 ? (
-                    <span className="text-slate-500 block py-2">No payment logs recorded yet.</span>
+                    <span className="block py-2 text-sm font-medium text-[#475b52]">No payment logs recorded yet.</span>
                   ) : (
                     payments.map((p) => (
                       <div key={p.id} className="py-3 first:pt-0 last:pb-0 flex justify-between items-center">
                         <div>
                           <span className="font-semibold text-slate-300 block">GCASH Transaction</span>
-                          <span className="text-[10px] text-slate-500 mt-0.5 block">Ref: {p.reference_number || 'N/A'}</span>
+                          <span className="mt-0.5 block text-xs font-medium text-[#52635b]">Ref: {p.reference_number || 'N/A'}</span>
                         </div>
                         <div className="text-right">
                           <span className="font-bold text-white block">₱{p.amount?.toLocaleString()}</span>
-                          <span className={`text-[9px] font-bold uppercase ${p.payment_status === 'verified' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                          <span className={`text-[11px] font-extrabold uppercase ${p.payment_status === 'verified' ? 'text-emerald-800' : 'text-amber-900'}`}>
                             {p.payment_status}
                           </span>
                         </div>
@@ -352,23 +352,23 @@ export default function CustomerDashboardPage() {
               {/* Document Checklist Panel */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative glass-card">
                 <h3 className="text-sm font-bold text-slate-200 mb-4 border-b border-slate-850 pb-2 flex items-center gap-1.5 uppercase tracking-wider">
-                  <FileCheck className="w-4.5 h-4.5 text-emerald-400" />
+                  <FileCheck className="w-4.5 h-4.5 text-emerald-700" />
                   ID & Income checklist
                 </h3>
 
                 <div className="space-y-3.5">
                   {documents.length === 0 ? (
-                    <span className="text-slate-500 text-xs">No documents listed.</span>
+                    <span className="text-sm font-medium text-[#475b52]">No documents listed.</span>
                   ) : (
                     documents.map((doc) => (
                       <div key={doc.id} className="flex items-center justify-between p-3 bg-slate-950/60 border border-slate-900 rounded-xl">
                         <div>
                           <span className="text-xs font-bold text-slate-300 block">{doc.document_type}</span>
-                          <span className="text-[10px] text-slate-500 block mt-0.5">Reviewed by the village team</span>
+                          <span className="mt-0.5 block text-xs font-medium text-[#52635b]">Reviewed by the village team</span>
                         </div>
-                        <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded ${
-                          doc.status === 'approved' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 
-                          'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                        <span className={`rounded border px-2 py-0.5 text-[11px] font-extrabold uppercase ${
+                          doc.status === 'approved' ? 'border-emerald-300 bg-emerald-100 text-emerald-800' :
+                          'border-amber-300 bg-amber-100 text-amber-900'
                         }`}>
                           {doc.status}
                         </span>
@@ -381,23 +381,23 @@ export default function CustomerDashboardPage() {
               {/* Site Viewing Schedule Cards */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative glass-card">
                 <h3 className="text-sm font-bold text-slate-200 mb-4 border-b border-slate-850 pb-2 flex items-center gap-1.5 uppercase tracking-wider">
-                  <Calendar className="w-4.5 h-4.5 text-emerald-400" />
+                  <Calendar className="w-4.5 h-4.5 text-emerald-700" />
                   Site viewings schedule
                 </h3>
 
                 <div className="space-y-3.5">
                   {siteViewings.length === 0 ? (
-                    <div className="text-slate-500 text-xs">
+                    <div className="text-sm font-medium text-[#475b52]">
                       No viewings scheduled yet.
                     </div>
                   ) : (
                     siteViewings.map((sv) => (
                       <div key={sv.id} className="p-3 bg-slate-950/60 border border-slate-900 rounded-xl space-y-1">
                         <span className="text-xs font-bold text-slate-300 block">Lot Viewing</span>
-                        <span className="text-[10px] text-slate-400 block">
+                        <span className="block text-xs font-medium text-[#475b52]">
                           Date: {sv.preferred_date} • Time: {sv.preferred_time}
                         </span>
-                        <span className={`text-[9px] font-bold uppercase mt-1.5 block ${sv.status === 'approved' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        <span className={`mt-1.5 block text-[11px] font-extrabold uppercase ${sv.status === 'approved' ? 'text-emerald-800' : 'text-amber-900'}`}>
                           {sv.status}
                         </span>
                       </div>
@@ -524,7 +524,7 @@ export default function CustomerDashboardPage() {
                     </div>
                   ) : (
                     <div className="flex h-full min-h-48 flex-col items-center justify-center text-center text-[#64748b]">
-                      <QrCode className="mb-2 h-9 w-9 text-[#94a3b8]" />
+                      <QrCode className="mb-2 h-9 w-9 text-[#5f7068]" />
                       <p className="text-xs font-bold">QR appears after Pay Now.</p>
                     </div>
                   )}

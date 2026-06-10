@@ -19,17 +19,17 @@ export default function AccountConfirmDialog({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#272727]/55 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-2xl border border-[#e2e8f0] bg-white p-6 text-center shadow-2xl">
-        <div className={`mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full border ${
+      <div className="w-full max-w-sm rounded-2xl border border-[#e2e8f0] bg-white p-4 text-center shadow-2xl">
+        <div className={`mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full border ${
           destructive
             ? 'border-red-100 bg-red-50 text-red-500'
             : 'border-amber-100 bg-amber-50 text-amber-600'
         }`}>
-          <AlertTriangle className="h-6 w-6" />
+          <AlertTriangle className="h-5 w-5" />
         </div>
         <h3 className="text-lg font-extrabold text-[#272727]">{title}</h3>
         <div className="mt-2 text-xs leading-relaxed text-[#64748b]">{description}</div>
-        <div className="mt-6 flex justify-center gap-3">
+        <div className="mt-4 flex justify-center gap-2">
           <button
             type="button"
             onClick={onCancel}

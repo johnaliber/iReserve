@@ -1,194 +1,304 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
-import DashboardShell from '@/components/layout/DashboardShell';
-import { 
-  PencilRuler, 
-  Plus, 
-  ArrowRight, 
-  Loader2,
-  CheckCircle2,
-  Layers,
-  Trash2
-} from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import {
+  ArrowRight,
+  Building2,
+  CheckCircle2,
+  CircleDot,
+  Clock3,
+  Eye,
+  Layers3,
+  Loader2,
+  Map,
+  MapPinned,
+  PencilRuler,
+  Plus,
+  RefreshCw,
+  Trash2,
+  X
+} from 'lucide-react';
+import DashboardShell from '@/components/layout/DashboardShell';
+import { createClient } from '@/lib/supabase/client';
+
+const InteractiveVillageMap = dynamic(
+  () => import('@/components/public/InteractiveVillageMap'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-[560px] items-center justify-center bg-[#eef3f0] text-[#64748b]">
+        <Loader2 className="mr-2 h-5 w-5 animate-spin text-[#16835f]" />
+        Loading village preview...
+      </div>
+    )
+  }
+);
+
+function formatDate(value) {
+  if (!value) return 'Not published';
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  }).format(new Date(value));
+}
+
+function statusClasses(status) {
+  if (status === 'published') {
+    return 'border-[#86d5b4] bg-[#dcfce7] text-[#166534]';
+  }
+
+  if (status === 'draft') {
+    return 'border-[#f4cf75] bg-[#fef3c7] text-[#92400e]';
+  }
+
+  return 'border-[#cbd5e1] bg-[#e2e8f0] text-[#1e293b]';
+}
+
+function StatCard({ icon: Icon, label, value, detail, accent = 'emerald' }) {
+  const accents = {
+    emerald: 'border-emerald-100 bg-emerald-50 text-emerald-700',
+    blue: 'border-blue-100 bg-blue-50 text-blue-700',
+    amber: 'border-amber-100 bg-amber-50 text-amber-700',
+    violet: 'border-violet-100 bg-violet-50 text-violet-700'
+  };
+
+  return (
+    <div className="group rounded-2xl border border-[#dfe7e3] bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.035)] transition duration-200 hover:-translate-y-0.5 hover:border-[#c9d8d1] hover:shadow-[0_12px_30px_rgba(15,23,42,0.07)]">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-xs font-extrabold uppercase tracking-[0.09em] text-[#475b52]">{label}</p>
+          <p className="mt-3 text-3xl font-extrabold leading-none tracking-tight text-[#17211d]">{value}</p>
+          <p className="mt-2 truncate text-xs font-semibold text-[#475b52]">{detail}</p>
+        </div>
+        <div className={`rounded-xl border p-3 transition-transform duration-200 group-hover:scale-105 ${accents[accent]}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function ArchitectDashboardPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const [loading, setLoading] = useState(true);
-  const [blueprintRows, setBlueprintRows] = useState([]);
+  const [rows, setRows] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
-  const [canCreateBlueprints, setCanCreateBlueprints] = useState(false);
-  
-  // Create Form State
+  const [selectedVillageId, setSelectedVillageId] = useState('');
+  const [canManageBlueprints, setCanManageBlueprints] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [selectedVillage, setSelectedVillage] = useState('');
   const [creating, setCreating] = useState(false);
   const [deletingBlueprintId, setDeletingBlueprintId] = useState('');
+  const [previewVersion, setPreviewVersion] = useState(0);
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
-  const fetchArchitectData = useCallback(async () => {
+  const fetchArchitectData = useCallback(async ({ preserveSelection = true } = {}) => {
     setLoading(true);
+    setError('');
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        router.push('/auth/login');
+        return;
+      }
+
       setCurrentUser(user);
 
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single();
 
+      if (profileError) throw profileError;
+
       const isSuperAdmin = profile?.role === 'super_admin';
       const isArchitect = profile?.role === 'architect';
-      setCanCreateBlueprints(isSuperAdmin || isArchitect);
+      setCanManageBlueprints(isSuperAdmin || isArchitect);
 
       let villages = [];
 
       if (isSuperAdmin) {
-        const { data: allVillages, error: villagesError } = await supabase
+        const { data, error: villagesError } = await supabase
           .from('villages')
           .select('*')
           .eq('status', 'active')
-          .order('created_at', { ascending: false });
+          .order('name');
 
         if (villagesError) throw villagesError;
-        villages = allVillages || [];
+        villages = data || [];
       } else if (isArchitect) {
-        const { data: uv, error: uvError } = await supabase
+        const { data, error: accessError } = await supabase
           .from('user_villages')
-          .select('*, villages(*)')
+          .select('villages(*)')
           .eq('user_id', user.id)
           .eq('role', 'architect');
 
-        if (uvError) throw uvError;
-        villages = (uv || [])
+        if (accessError) throw accessError;
+        villages = (data || [])
           .map((item) => item.villages)
-          .filter((village) => village?.status === 'active');
+          .filter((village) => village?.status === 'active')
+          .sort((a, b) => a.name.localeCompare(b.name));
       }
 
+      const villageIds = villages.map((village) => village.id);
       let blueprints = [];
+      let objects = [];
+      let properties = [];
 
-      if (villages.length > 0) {
-        const { data: bp, error: bpError } = await supabase
-          .from('blueprints')
-          .select('*')
-          .in('village_id', villages.map((village) => village.id))
-          .in('status', ['draft', 'published'])
-          .order('created_at', { ascending: false });
+      if (villageIds.length > 0) {
+        const [
+          { data: blueprintData, error: blueprintError },
+          { data: propertyData, error: propertyError }
+        ] = await Promise.all([
+          supabase
+            .from('blueprints')
+            .select('*')
+            .in('village_id', villageIds)
+            .in('status', ['draft', 'published'])
+            .order('updated_at', { ascending: false }),
+          supabase
+            .from('properties')
+            .select('id, village_id, status')
+            .in('village_id', villageIds)
+        ]);
 
-        if (bpError) throw bpError;
-        blueprints = bp || [];
-      }
+        if (blueprintError) throw blueprintError;
+        if (propertyError) throw propertyError;
 
-      const rows = villages.map((village) => {
-        const latestBlueprint = blueprints.find((blueprint) => blueprint.village_id === village.id) || null;
+        blueprints = blueprintData || [];
+        properties = propertyData || [];
 
-        return {
-          village,
-          blueprint: latestBlueprint,
-          hasBlueprint: Boolean(latestBlueprint),
-          blueprintTitle: latestBlueprint ? latestBlueprint.name : 'No Blueprint Yet',
-          version: latestBlueprint ? `v${latestBlueprint.version}` : '-',
-          status: latestBlueprint ? latestBlueprint.status : 'no_blueprint',
-          createdDate: latestBlueprint ? latestBlueprint.created_at : null
-        };
-      });
+        if (blueprints.length > 0) {
+          const { data: objectData, error: objectError } = await supabase
+            .from('blueprint_objects')
+            .select('id, blueprint_id, object_type, linked_property_id, is_visible')
+            .in('blueprint_id', blueprints.map((blueprint) => blueprint.id));
 
-      setBlueprintRows(rows);
-
-      const firstVillageWithoutBlueprint = rows.find((row) => !row.hasBlueprint)?.village.id || '';
-      setSelectedVillage(firstVillageWithoutBlueprint);
-    } catch (err) {
-      console.error(err);
-      setError(err.message || 'Error loading architect workspace.');
-    } finally {
-      setLoading(false);
-    }
-  }, [supabase]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchArchitectData();
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [fetchArchitectData]);
-
-  const createBlueprintDraft = async (villageId, { redirectToEditor = false } = {}) => {
-    if (!villageId) {
-      setError('Please select a village.');
-      return;
-    }
-
-    if (!currentUser || !canCreateBlueprints) {
-      setError('Only super admin or architect users can create blueprint drafts.');
-      return;
-    }
-
-    setCreating(true);
-    setError('');
-    setSuccessMsg('');
-
-    try {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', currentUser.id)
-        .single();
-
-      const isSuperAdmin = profile?.role === 'super_admin';
-      const isArchitect = profile?.role === 'architect';
-
-      if (!isSuperAdmin && !isArchitect) {
-        throw new Error('Only super admin or architect users can create blueprint drafts.');
-      }
-
-      if (!isSuperAdmin) {
-        const { data: access } = await supabase
-          .from('user_villages')
-          .select('id')
-          .eq('user_id', currentUser.id)
-          .eq('village_id', villageId)
-          .eq('role', 'architect')
-          .maybeSingle();
-
-        if (!access) {
-          throw new Error('You are not assigned as architect for this village.');
+          if (objectError) throw objectError;
+          objects = objectData || [];
         }
       }
 
-      const { data: existingBlueprint } = await supabase
-        .from('blueprints')
-        .select('id')
-        .eq('village_id', villageId)
-        .in('status', ['draft', 'published'])
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const nextRows = villages.map((village) => {
+        const blueprint = blueprints.find((item) => item.village_id === village.id) || null;
+        const blueprintObjects = blueprint
+          ? objects.filter((object) => object.blueprint_id === blueprint.id)
+          : [];
+        const villageProperties = properties.filter((property) => property.village_id === village.id);
+        const lotObjects = blueprintObjects.filter((object) => ['lot', 'house'].includes(object.object_type));
 
-      if (existingBlueprint) {
-        throw new Error('This village already has a blueprint.');
-      }
+        return {
+          village,
+          blueprint,
+          objectCount: blueprintObjects.length,
+          lotCount: lotObjects.length,
+          linkedLotCount: lotObjects.filter((object) => object.linked_property_id).length,
+          availableCount: villageProperties.filter((property) => property.status === 'available').length,
+          reservedCount: villageProperties.filter((property) => property.status === 'reserved').length,
+          soldCount: villageProperties.filter((property) => property.status === 'sold').length
+        };
+      });
 
-      const { data: village, error: villageError } = await supabase
-        .from('villages')
-        .select('id, name')
-        .eq('id', villageId)
-        .single();
+      setRows(nextRows);
+      setSelectedVillageId((current) => {
+        if (preserveSelection && nextRows.some((row) => row.village.id === current)) {
+          return current;
+        }
+        return nextRows[0]?.village.id || '';
+      });
+      setLastSyncedAt(new Date());
+    } catch (err) {
+      console.error('Error loading architect dashboard:', err);
+      setError(err.message || 'Unable to load the architect dashboard.');
+    } finally {
+      setLoading(false);
+    }
+  }, [router, supabase]);
 
-      if (villageError) throw villageError;
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchArchitectData({ preserveSelection: false });
+    }, 0);
 
-      const { data: blueprint, error: bpError } = await supabase
+    return () => clearTimeout(timer);
+  }, [fetchArchitectData]);
+
+  const selectedRow = rows.find((row) => row.village.id === selectedVillageId) || rows[0] || null;
+  const villagesWithoutBlueprints = rows.filter((row) => !row.blueprint);
+  const openCreateForm = () => {
+    const villageId = selectedRow && !selectedRow.blueprint
+      ? selectedRow.village.id
+      : villagesWithoutBlueprints[0]?.village.id;
+
+    if (villageId) setSelectedVillageId(villageId);
+    setShowCreateForm(true);
+  };
+
+  useEffect(() => {
+    if (!selectedRow?.blueprint?.id) return undefined;
+
+    const blueprintId = selectedRow.blueprint.id;
+    const refreshPreview = () => {
+      setPreviewVersion((version) => version + 1);
+      setLastSyncedAt(new Date());
+      fetchArchitectData();
+    };
+
+    const channel = supabase
+      .channel(`architect-preview-${blueprintId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'blueprint_objects',
+          filter: `blueprint_id=eq.${blueprintId}`
+        },
+        refreshPreview
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'blueprints',
+          filter: `id=eq.${blueprintId}`
+        },
+        refreshPreview
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchArchitectData, selectedRow?.blueprint?.id, supabase]);
+
+  const createBlueprintDraft = async (villageId, redirectToEditor = false) => {
+    if (!villageId || !currentUser || !canManageBlueprints) return;
+
+    setCreating(true);
+    setError('');
+    setSuccessMessage('');
+
+    try {
+      const targetRow = rows.find((row) => row.village.id === villageId);
+      if (!targetRow) throw new Error('Village not found.');
+      if (targetRow.blueprint) throw new Error('This village already has an active blueprint.');
+
+      const { data: blueprint, error: blueprintError } = await supabase
         .from('blueprints')
         .insert({
           village_id: villageId,
-          name: `${village.name} Master Blueprint`,
+          name: `${targetRow.village.name} Master Blueprint`,
           version: 1,
           status: 'draft',
           canvas_width: 3000,
@@ -198,7 +308,7 @@ export default function ArchitectDashboardPage() {
         .select()
         .single();
 
-      if (bpError) throw bpError;
+      if (blueprintError) throw blueprintError;
 
       await supabase.from('audit_logs').insert({
         user_id: currentUser.id,
@@ -212,321 +322,471 @@ export default function ArchitectDashboardPage() {
         }
       });
 
+      setSelectedVillageId(villageId);
       setShowCreateForm(false);
-      setSuccessMsg('Blueprint draft created successfully.');
+      setSuccessMessage('Blueprint draft created.');
       await fetchArchitectData();
 
       if (redirectToEditor) {
         router.push(`/architect/blueprints/${blueprint.id}/editor`);
       }
     } catch (err) {
-      console.error(err);
-      setError(err.message || 'Error creating blueprint draft.');
+      console.error('Error creating blueprint:', err);
+      setError(err.message || 'Unable to create the blueprint draft.');
     } finally {
       setCreating(false);
     }
   };
 
-  const handleCreateBlueprint = async (e) => {
-    e.preventDefault();
-    await createBlueprintDraft(selectedVillage, { redirectToEditor: false });
-  };
+  const deleteBlueprint = async () => {
+    if (!selectedRow?.blueprint || !currentUser) return;
 
-  const deleteBlueprint = async (row) => {
-    if (!row?.blueprint?.id || !currentUser) return;
-
-    const confirmed = confirm(
-      `Delete "${row.blueprint.name}"?\n\nThis will remove the blueprint and its canvas objects. The village will remain available so you can create a new draft later.`
+    const confirmed = window.confirm(
+      `Delete "${selectedRow.blueprint.name}"? This also removes its canvas objects.`
     );
-
     if (!confirmed) return;
 
-    setDeletingBlueprintId(row.blueprint.id);
+    setDeletingBlueprintId(selectedRow.blueprint.id);
     setError('');
-    setSuccessMsg('');
+    setSuccessMessage('');
 
     try {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', currentUser.id)
-        .single();
-
-      const isSuperAdmin = profile?.role === 'super_admin';
-      const isArchitect = profile?.role === 'architect';
-
-      if (!isSuperAdmin && !isArchitect) {
-        throw new Error('Only super admin or architect users can delete blueprints.');
-      }
-
-      if (!isSuperAdmin) {
-        const { data: access } = await supabase
-          .from('user_villages')
-          .select('id')
-          .eq('user_id', currentUser.id)
-          .eq('village_id', row.village.id)
-          .eq('role', 'architect')
-          .maybeSingle();
-
-        if (!access) {
-          throw new Error('You are not assigned as architect for this village.');
-        }
-      }
-
-      const { error: deleteObjectsError } = await supabase
-        .from('blueprint_objects')
-        .delete()
-        .eq('blueprint_id', row.blueprint.id);
-
-      if (deleteObjectsError) throw deleteObjectsError;
-
-      const { error: deleteBlueprintError } = await supabase
+      const { error: deleteError } = await supabase
         .from('blueprints')
         .delete()
-        .eq('id', row.blueprint.id);
+        .eq('id', selectedRow.blueprint.id);
 
-      if (deleteBlueprintError) throw deleteBlueprintError;
+      if (deleteError) throw deleteError;
 
       await supabase.from('audit_logs').insert({
         user_id: currentUser.id,
-        village_id: row.village.id,
+        village_id: selectedRow.village.id,
         action: 'blueprint_deleted',
         entity_type: 'blueprint',
-        entity_id: row.blueprint.id,
+        entity_id: selectedRow.blueprint.id,
         metadata: {
-          blueprint_name: row.blueprint.name,
-          status: row.blueprint.status,
-          version: row.blueprint.version
+          blueprint_name: selectedRow.blueprint.name,
+          status: selectedRow.blueprint.status,
+          version: selectedRow.blueprint.version
         }
       });
 
-      setSuccessMsg('Blueprint deleted successfully.');
+      setSuccessMessage('Blueprint deleted.');
+      setPreviewVersion((version) => version + 1);
       await fetchArchitectData();
     } catch (err) {
       console.error('Error deleting blueprint:', err);
-      setError(err.message || 'Error deleting blueprint.');
+      setError(err.message || 'Unable to delete the blueprint.');
     } finally {
       setDeletingBlueprintId('');
     }
   };
 
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case 'published':
-        return 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
-      case 'draft':
-        return 'bg-amber-500/10 text-amber-500 border border-amber-500/20';
-      default:
-        return 'bg-slate-500/10 text-slate-500 border border-slate-500/20';
-    }
-  };
-
-  const getStatusLabel = (status) => {
-    switch (status) {
-      case 'published':
-        return 'Published';
-      case 'draft':
-        return 'Draft';
-      default:
-        return 'No Blueprint Yet';
-    }
-  };
-
-  const villagesWithoutBlueprints = blueprintRows.filter((row) => !row.hasBlueprint);
-
-  if (loading) {
+  if (loading && rows.length === 0) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">
-        <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
+      <div className="flex min-h-screen items-center justify-center bg-[#f5f7f6] text-[#64748b]">
+        <Loader2 className="mr-3 h-7 w-7 animate-spin text-[#16835f]" />
+        Loading architect dashboard...
       </div>
     );
   }
 
   return (
     <DashboardShell>
-      <div className="space-y-6">
-        
-        {/* Header Title */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-900 pb-5">
-          <div>
-            <h1 className="text-3xl font-extrabold text-white flex items-center gap-2">
-              <PencilRuler className="w-8 h-8 text-emerald-400" />
-              Architect Design Workspace
-            </h1>
-            <p className="text-slate-400 text-xs mt-1">
-              Create, edit, snap roads, map zones, and publish vector layouts for your assigned subdivisions.
-            </p>
+      <div className="mx-auto max-w-[1680px] space-y-6 pb-10">
+        <header className="overflow-hidden rounded-3xl border border-[#dce7e2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_40px_rgba(15,23,42,0.045)]">
+          <div className="h-1.5 bg-gradient-to-r from-[#16835f] via-[#21a77a] to-[#8bd8bc]" />
+          <div className="flex flex-col gap-6 p-6 lg:p-7 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex items-start gap-4">
+              <div className="hidden h-13 w-13 shrink-0 items-center justify-center rounded-2xl bg-[#eaf8f2] text-[#16835f] sm:flex">
+                <MapPinned className="h-7 w-7" />
+              </div>
+              <div>
+                <div className="mb-2 flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.18em] text-[#16835f]">
+                  <CircleDot className="h-3 w-3 fill-emerald-500 text-emerald-500" />
+                  Architect workspace
+                </div>
+                <h1 className="text-2xl font-extrabold tracking-tight text-[#17211d] sm:text-3xl">
+                  Village Live Preview
+                </h1>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-[#64748b]">
+                  Monitor the active site plan, validate mapped inventory, and continue designing from one workspace.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-2 text-[9px] font-extrabold uppercase tracking-[0.1em] text-[#8a9a93]">
+                  Active village
+                </span>
+                <select
+                  value={selectedRow?.village.id || ''}
+                  onChange={(event) => {
+                    setSelectedVillageId(event.target.value);
+                    setPreviewVersion((version) => version + 1);
+                  }}
+                  disabled={rows.length === 0}
+                  className="h-10 min-w-52 appearance-none rounded-xl border border-[#d6e0db] bg-[#fbfcfb] px-3 pb-1 pt-4 text-sm font-extrabold text-[#223129] shadow-sm outline-none transition focus:border-[#16835f] focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+                  aria-label="Select village preview"
+                >
+                  {rows.length === 0 ? (
+                    <option value="">No assigned villages</option>
+                  ) : (
+                    rows.map((row) => (
+                      <option key={row.village.id} value={row.village.id}>
+                        {row.village.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setPreviewVersion((version) => version + 1);
+                  fetchArchitectData();
+                }}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#d6e0db] bg-white px-3 text-xs font-extrabold text-[#52635b] shadow-sm transition hover:border-[#b9cbc2] hover:bg-[#f7faf8]"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Refresh
+              </button>
+
+              {selectedRow?.blueprint ? (
+                <Link
+                  href={`/architect/blueprints/${selectedRow.blueprint.id}/editor`}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#16835f] px-4 text-xs font-extrabold !text-white shadow-[0_8px_18px_rgba(22,131,95,0.22)] transition hover:-translate-y-0.5 hover:bg-[#116f50]"
+                >
+                  <PencilRuler className="h-4 w-4" />
+                  Open Canvas Editor
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  onClick={openCreateForm}
+                  disabled={!selectedRow || !canManageBlueprints}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#16835f] px-4 text-xs font-extrabold !text-white shadow-[0_8px_18px_rgba(22,131,95,0.22)] transition hover:-translate-y-0.5 hover:bg-[#116f50] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Plus className="h-4 w-4" />
+                  Create Blueprint
+                </button>
+              )}
+            </div>
           </div>
+        </header>
 
-          <button
-            onClick={() => {
-              setError('');
-              setShowCreateForm(!showCreateForm);
-            }}
-            disabled={!canCreateBlueprints || villagesWithoutBlueprints.length === 0}
-            className="self-start md:self-auto flex items-center gap-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl transition shadow cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            title={villagesWithoutBlueprints.length === 0 ? 'All villages already have blueprints.' : 'Create blueprint draft'}
-          >
-            <Plus className="w-4 h-4" />
-            Create Blueprint Draft
-          </button>
-        </div>
-
-        {successMsg && (
-          <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4" />
-            {successMsg}
+        {successMessage && (
+          <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-700">
+            <CheckCircle2 className="h-4 w-4" />
+            {successMessage}
           </div>
         )}
 
-        {error && !showCreateForm && (
-          <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-semibold">
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-700">
             {error}
           </div>
         )}
 
-        {/* Create Form Modal/Box Overlay */}
-        {showCreateForm && (
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 glass-card space-y-4 max-w-lg">
-            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
-              New Blueprint Draft Setup
-            </h3>
-            
-            {error && (
-              <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
-                {error}
-              </div>
-            )}
+        {selectedRow ? (
+          <>
+            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <StatCard
+                icon={Layers3}
+                label="Canvas Objects"
+                value={selectedRow.objectCount}
+                detail={`${selectedRow.lotCount} mapped lot shapes`}
+              />
+              <StatCard
+                icon={Building2}
+                label="Linked Properties"
+                value={selectedRow.linkedLotCount}
+                detail={`${Math.max(0, selectedRow.lotCount - selectedRow.linkedLotCount)} shapes need linking`}
+                accent="blue"
+              />
+              <StatCard
+                icon={Eye}
+                label="Available Lots"
+                value={selectedRow.availableCount}
+                detail={`${selectedRow.reservedCount} reserved`}
+                accent="amber"
+              />
+              <StatCard
+                icon={CheckCircle2}
+                label="Sold Properties"
+                value={selectedRow.soldCount}
+                detail={`${selectedRow.availableCount + selectedRow.reservedCount + selectedRow.soldCount} tracked properties`}
+                accent="violet"
+              />
+            </section>
 
-            {villagesWithoutBlueprints.length === 0 ? (
-              <div className="p-3 rounded-lg bg-slate-500/10 border border-slate-500/20 text-slate-500 text-xs font-semibold">
-                All villages already have blueprints.
-              </div>
-            ) : (
-              <form onSubmit={handleCreateBlueprint} className="space-y-4">
-                <div>
-                  <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Village Without Blueprint</label>
-                  <select
-                    value={selectedVillage}
-                    onChange={(e) => setSelectedVillage(e.target.value)}
-                    className="w-full bg-slate-950/50 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 outline-none text-xs cursor-pointer"
-                  >
-                    {villagesWithoutBlueprints.map(({ village }) => (
-                      <option key={village.id} value={village.id}>
-                        {village.name}
-                      </option>
-                    ))}
-                  </select>
+            <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="overflow-hidden rounded-2xl border border-[#dce5e1] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_34px_rgba(15,23,42,0.045)]">
+                <div className="flex flex-col gap-3 border-b border-[#e3e9e6] bg-white px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-xl font-extrabold tracking-tight text-[#17211d]">{selectedRow.village.name}</h2>
+                      <span className={`rounded-full border px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-wider ${statusClasses(selectedRow.blueprint?.status)}`}>
+                        {selectedRow.blueprint?.status || 'No blueprint'}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm font-medium text-[#475b52]">
+                      {selectedRow.village.city || 'Village site'}
+                      {selectedRow.village.province ? `, ${selectedRow.village.province}` : ''}
+                    </p>
+                  </div>
+
+                  <div className="flex w-fit items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-[10px] font-extrabold text-emerald-700">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                    </span>
+                    Live sync
+                    {lastSyncedAt && ` - ${lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                  </div>
                 </div>
 
-                <div className="flex gap-3 justify-end pt-2">
+                {selectedRow.blueprint && selectedRow.village.slug ? (
+                  <div className="architect-preview-compact max-h-[440px] overflow-hidden bg-[#eef3f0] p-3">
+                    <InteractiveVillageMap
+                      key={`${selectedRow.village.id}-${previewVersion}`}
+                      villageSlug={selectedRow.village.slug}
+                      hideSidebar
+                      allowDemoFallback={false}
+                      adminPropertyMode
+                      adminShowHidden
+                      preferDraftBlueprint
+                      showSmartAssistant={false}
+                    />
+                  </div>
+                ) : (
+                  <div className="canvas-grid-bg flex min-h-[420px] items-center justify-center bg-[#f6f9f7] p-5 text-center">
+                    <div className="w-full max-w-md rounded-3xl border border-[#dce7e2] bg-white/95 p-8 shadow-[0_18px_55px_rgba(15,23,42,0.09)] backdrop-blur">
+                      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-emerald-100 bg-emerald-50 text-[#16835f] shadow-sm">
+                        <Map className="h-8 w-8" />
+                      </div>
+                      <p className="mt-5 text-[10px] font-extrabold uppercase tracking-[0.16em] text-[#16835f]">No active blueprint</p>
+                      <h3 className="mt-2 text-xl font-extrabold tracking-tight text-[#223129]">Build the first site plan</h3>
+                      <p className="mx-auto mt-3 max-w-sm text-sm font-medium leading-6 text-[#475b52]">
+                        Create a blueprint draft, then add roads, lots, zones, and amenities in the canvas editor.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={openCreateForm}
+                        className="mt-6 inline-flex min-h-12 items-center gap-2 rounded-xl bg-[#16835f] px-6 text-xs font-extrabold !text-white shadow-[0_8px_18px_rgba(22,131,95,0.2)] transition hover:-translate-y-0.5 hover:bg-[#116f50]"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Create Blueprint Draft
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <aside className="space-y-5">
+                <div className="rounded-2xl border border-[#dce5e1] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_10px_28px_rgba(15,23,42,0.04)]">
+                  <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#475b52]">Blueprint details</p>
+                  <h3 className="mt-2 text-base font-extrabold text-[#17211d]">
+                    {selectedRow.blueprint?.name || 'No blueprint yet'}
+                  </h3>
+
+                  <dl className="mt-5 space-y-3 text-xs">
+                    <div className="flex items-center justify-between gap-4 border-b border-[#edf1ef] pb-3">
+                      <dt className="font-semibold text-[#475b52]">Version</dt>
+                      <dd className="font-extrabold text-[#223129]">
+                        {selectedRow.blueprint ? `v${selectedRow.blueprint.version}` : '-'}
+                      </dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-4 border-b border-[#edf1ef] pb-3">
+                      <dt className="font-semibold text-[#475b52]">Canvas size</dt>
+                      <dd className="font-extrabold text-[#223129]">
+                        {selectedRow.blueprint
+                          ? `${selectedRow.blueprint.canvas_width} x ${selectedRow.blueprint.canvas_height}`
+                          : '-'}
+                      </dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-4 border-b border-[#edf1ef] pb-3">
+                      <dt className="font-semibold text-[#475b52]">Last updated</dt>
+                      <dd className="font-extrabold text-[#223129]">
+                        {formatDate(selectedRow.blueprint?.updated_at)}
+                      </dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <dt className="font-semibold text-[#475b52]">Published</dt>
+                      <dd className="font-extrabold text-[#223129]">
+                        {formatDate(selectedRow.blueprint?.published_at)}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  {selectedRow.blueprint && (
+                    <div className="mt-5 space-y-2">
+                      <Link
+                        href={`/architect/blueprints/${selectedRow.blueprint.id}/editor`}
+                        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#16835f] px-4 text-xs font-extrabold !text-white transition hover:bg-[#116f50]"
+                      >
+                        Continue Designing
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={deleteBlueprint}
+                        disabled={deletingBlueprintId === selectedRow.blueprint.id}
+                        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 text-xs font-extrabold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                      >
+                        {deletingBlueprintId === selectedRow.blueprint.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                        Delete Blueprint
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="overflow-hidden rounded-2xl border border-[#203b31] bg-[#172b24] p-6 shadow-[0_12px_30px_rgba(15,23,42,0.12)]">
+                  <div className="flex items-center gap-2 !text-[#7ee2bd]">
+                    <Clock3 className="h-4 w-4" />
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.14em]">Preview behavior</p>
+                  </div>
+                  <p className="mt-3 text-sm font-bold leading-6 !text-white">
+                    Draft saves are shown here before the map is published to buyers.
+                  </p>
+                  <p className="mt-2 text-xs leading-5 !text-[#b8c9c2]">
+                    Pan and zoom the map to inspect road alignment, lot boundaries, labels, and environmental zones.
+                  </p>
+                </div>
+              </aside>
+            </section>
+
+            <section className="rounded-2xl border border-[#dce5e1] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_10px_28px_rgba(15,23,42,0.04)]">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-base font-extrabold text-[#17211d]">Assigned Villages</h2>
+                  <p className="mt-1 text-sm font-medium text-[#475b52]">Switch preview scope or start an unconfigured village.</p>
+                </div>
+                {villagesWithoutBlueprints.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => setShowCreateForm(false)}
-                    className="py-2 px-4 border border-slate-800 text-slate-400 hover:text-white rounded-xl text-xs font-semibold outline-none cursor-pointer"
+                    onClick={openCreateForm}
+                    className="inline-flex min-h-10 items-center gap-2 self-start rounded-xl border border-[#cfe0d8] bg-emerald-50 px-4 text-xs font-extrabold text-[#13795b]"
                   >
-                    Cancel
+                    <Plus className="h-4 w-4" />
+                    New Blueprint
                   </button>
+                )}
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {rows.map((row) => (
                   <button
-                    type="submit"
-                    disabled={creating || !selectedVillage}
-                    className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs py-2 px-5 rounded-xl transition outline-none cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                    key={row.village.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedVillageId(row.village.id);
+                      setPreviewVersion((version) => version + 1);
+                    }}
+                    className={`flex items-center justify-between gap-4 rounded-xl border p-4 text-left transition ${
+                      selectedRow.village.id === row.village.id
+                        ? 'border-[#16835f] bg-emerald-50/60'
+                        : 'border-[#e1e8e5] bg-[#fbfcfb] hover:border-[#bcd0c7]'
+                    }`}
                   >
-                    {creating && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                    Create Draft
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-extrabold text-[#223129]">{row.village.name}</p>
+                      <p className="mt-1 text-xs font-semibold text-[#475b52]">
+                        {row.blueprint ? `${row.lotCount} mapped lots` : 'Blueprint not started'}
+                      </p>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2 py-1 text-[8px] font-extrabold uppercase ${statusClasses(row.blueprint?.status)}`}>
+                      {row.blueprint?.status || 'New'}
+                    </span>
                   </button>
-                </div>
-              </form>
-            )}
+                ))}
+              </div>
+            </section>
+          </>
+        ) : (
+          <div className="flex min-h-[500px] items-center justify-center rounded-2xl border border-[#dce5e1] bg-white p-8 text-center shadow-sm">
+            <div className="max-w-md">
+              <MapPinned className="mx-auto h-10 w-10 text-[#5f7068]" />
+              <h2 className="mt-4 text-lg font-extrabold text-[#223129]">No assigned villages</h2>
+              <p className="mt-2 text-sm font-medium text-[#475b52]">
+                Ask a super administrator to assign an active village to this architect account.
+              </p>
+            </div>
           </div>
         )}
-
-        {/* Blueprints Grid Table */}
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 glass-card space-y-4">
-          <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
-            <Layers className="w-4.5 h-4.5 text-emerald-400" />
-            Vector Subdivision Blueprints
-          </h3>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-medium border-collapse">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-500 select-none">
-                  <th className="py-3 px-2">Blueprint Title</th>
-                  <th className="py-3 px-2">Village Scope</th>
-                  <th className="py-3 px-2">Version</th>
-                  <th className="py-3 px-2">Status</th>
-                  <th className="py-3 px-2">Created Date</th>
-                  <th className="py-3 px-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/50 text-slate-300">
-                {blueprintRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-10 text-center text-slate-500">
-                      No active villages available for this architect workspace.
-                    </td>
-                  </tr>
-                ) : (
-                  blueprintRows.map((row) => (
-                    <tr key={row.village.id} className="hover:bg-slate-950/20 transition-colors">
-                      <td className="py-3.5 px-2 font-semibold text-white">{row.blueprintTitle}</td>
-                      <td className="py-3.5 px-2 text-slate-400">{row.village.name}</td>
-                      <td className="py-3.5 px-2 text-slate-400">{row.version}</td>
-                      <td className="py-3.5 px-2">
-                        <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded ${getStatusBadge(row.status)}`}>
-                          {getStatusLabel(row.status)}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-2 text-slate-500">
-                        {row.createdDate ? new Date(row.createdDate).toLocaleDateString() : '-'}
-                      </td>
-                      <td className="py-3.5 px-2 text-right">
-                        {row.hasBlueprint ? (
-                          <div className="flex justify-end gap-2">
-                            <Link
-                              href={`/architect/blueprints/${row.blueprint.id}/editor`}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-950 border border-slate-850 hover:border-emerald-500/30 hover:bg-slate-800/30 text-emerald-400 font-bold rounded-lg transition"
-                            >
-                              Launch Editor
-                              <ArrowRight className="w-3 h-3" />
-                            </Link>
-                            <button
-                              type="button"
-                              onClick={() => deleteBlueprint(row)}
-                              disabled={deletingBlueprintId === row.blueprint.id || !canCreateBlueprints}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 font-bold rounded-lg transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                              title="Delete blueprint"
-                            >
-                              {deletingBlueprintId === row.blueprint.id ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                              ) : (
-                                <Trash2 className="w-3 h-3" />
-                              )}
-                              Delete
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => createBlueprintDraft(row.village.id, { redirectToEditor: true })}
-                            disabled={creating || !canCreateBlueprints}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            Create Draft
-                            <ArrowRight className="w-3 h-3" />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
       </div>
+
+      {showCreateForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#17211d]/45 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              createBlueprintDraft(selectedVillageId, true);
+            }}
+            className="w-full max-w-md rounded-2xl border border-[#dce5e1] bg-white p-6 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#16835f]">New design</p>
+                <h2 className="mt-1 text-xl font-extrabold text-[#17211d]">Create Blueprint Draft</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCreateForm(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-[#52635b] transition hover:bg-[#f1f5f3] hover:text-[#223129]"
+                aria-label="Close create blueprint dialog"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <label className="mt-5 block text-[10px] font-extrabold uppercase tracking-wider text-[#64748b]">
+              Village
+              <select
+                value={selectedVillageId}
+                onChange={(event) => setSelectedVillageId(event.target.value)}
+                className="mt-2 min-h-11 w-full rounded-xl border border-[#d6e0db] bg-white px-3 text-sm font-bold normal-case tracking-normal text-[#223129] outline-none focus:border-[#16835f]"
+              >
+                {villagesWithoutBlueprints.map((row) => (
+                  <option key={row.village.id} value={row.village.id}>
+                    {row.village.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {villagesWithoutBlueprints.length === 0 && (
+              <p className="mt-4 rounded-xl bg-slate-50 p-3 text-xs font-medium text-[#64748b]">
+                Every assigned village already has an active blueprint.
+              </p>
+            )}
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowCreateForm(false)}
+                className="min-h-11 rounded-xl border border-[#d6e0db] px-4 text-xs font-extrabold text-[#52635b]"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={creating || villagesWithoutBlueprints.length === 0}
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#16835f] px-5 text-xs font-extrabold !text-white disabled:opacity-50"
+              >
+                {creating && <Loader2 className="h-4 w-4 animate-spin" />}
+                Create and Open Editor
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </DashboardShell>
   );
 }

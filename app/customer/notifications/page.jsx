@@ -44,7 +44,7 @@ export default function CustomerNotificationsPage() {
           <div>
             <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-600">Updates</p>
             <h1 className="mt-1 text-3xl font-extrabold text-[#272727]">Notifications</h1>
-            <p className="mt-1 text-sm text-[#64748b]">Important updates about your reservation, payments, documents, and site viewing.</p>
+            <p className="mt-1 text-sm font-medium text-[#475b52]">Important updates about your reservation, payments, documents, and site viewing.</p>
           </div>
           {notifications.some((item) => !item.is_read) && (
             <button type="button" onClick={markAllRead} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#dbe4ee] bg-white px-4 text-sm font-bold text-[#272727]">
@@ -72,8 +72,8 @@ export default function CustomerNotificationsPage() {
                   <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${notification.is_read ? 'bg-[#cbd5e1]' : 'bg-emerald-500'}`} />
                   <div>
                     <h2 className="font-extrabold text-[#272727]">{notification.title}</h2>
-                    <p className="mt-1 text-sm leading-6 text-[#64748b]">{notification.message}</p>
-                    <p className="mt-2 text-xs text-[#94a3b8]">{new Date(notification.created_at).toLocaleString('en-PH')}</p>
+                    <p className="mt-1 text-sm font-medium leading-6 text-[#33443c]">{notification.message}</p>
+                    <p className="mt-2 text-xs font-medium text-[#5f7068]">{new Date(notification.created_at).toLocaleString('en-PH')}</p>
                   </div>
                 </div>
               </button>

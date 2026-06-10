@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Navbar from './Navbar';
-import Sidebar from './Sidebar';
+import AdminSidebar from '@/components/admin/AdminSidebar';
 
 export default function DashboardShell({ children }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -21,14 +21,23 @@ export default function DashboardShell({ children }) {
   };
 
   return (
-    <div className="relative flex min-h-screen flex-col overflow-hidden bg-[#f5f7f6] text-[#17211d]">
-      <Navbar toggleSidebar={toggleSidebar} isSidebarOpen={isSidebarOpen} />
+    <div className="dashboard-compact relative flex min-h-screen flex-col overflow-hidden bg-[#f5f7f6] text-[#17211d]">
+      <Navbar
+        toggleSidebar={toggleSidebar}
+        isSidebarOpen={isSidebarOpen}
+        isSidebarCollapsed={isSidebarCollapsed}
+      />
       
-      <div className="relative z-10 flex flex-1 overflow-hidden">
-        <Sidebar isOpen={isSidebarOpen} isCollapsed={isSidebarCollapsed} onClose={closeSidebar} />
+      <div className="relative z-10 flex flex-1 overflow-visible">
+        <AdminSidebar
+          isOpen={isSidebarOpen}
+          isCollapsed={isSidebarCollapsed}
+          onClose={closeSidebar}
+          onToggleCollapse={() => setIsSidebarCollapsed((current) => !current)}
+        />
         
-        <main className={`w-full flex-1 overflow-y-auto px-4 py-6 transition-[margin] duration-300 md:px-8 ${
-          isSidebarCollapsed ? 'md:ml-20' : 'md:ml-72'
+        <main className={`w-full flex-1 overflow-y-auto px-4 py-4 transition-[margin] duration-300 md:px-5 md:py-5 ${
+          isSidebarCollapsed ? 'md:ml-[72px]' : 'md:ml-[260px]'
         }`}>
           {children}
         </main>

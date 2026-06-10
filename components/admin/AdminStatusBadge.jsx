@@ -2,12 +2,12 @@ import React from 'react';
 
 export default function AdminStatusBadge({ status = 'active' }) {
   const style = {
-    active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    inactive: 'border-slate-200 bg-slate-50 text-slate-600',
-    suspended: 'border-red-200 bg-red-50 text-red-700',
-    pending: 'border-amber-200 bg-amber-50 text-amber-700',
-    approved: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    rejected: 'border-red-200 bg-red-50 text-red-700'
-  }[status] || 'border-slate-200 bg-slate-50 text-slate-600';
-  return <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider ${style}`}>{status.replaceAll('_', ' ')}</span>;
+    active: 'border-emerald-300 bg-emerald-100 text-emerald-800',
+    inactive: 'border-[#cbd5e1] bg-[#e2e8f0] text-[#1e293b]',
+    suspended: 'border-red-300 bg-red-100 text-red-900',
+    pending: 'border-amber-300 bg-amber-100 text-amber-900',
+    approved: 'border-emerald-300 bg-emerald-100 text-emerald-800',
+    rejected: 'border-red-300 bg-red-100 text-red-900'
+  }[status] || 'border-[#cbd5e1] bg-[#e2e8f0] text-[#1e293b]';
+  return <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide ${style}`}>{status.replaceAll('_', ' ')}</span>;
 }

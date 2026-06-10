@@ -1,23 +1,17 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
-import { Bell, LogOut, User, Menu, X } from 'lucide-react';
+import { Bell, Menu, X } from 'lucide-react';
 import Link from 'next/link';
-import BrandLogo from '@/components/brand/BrandLogo';
-import ConfirmActionDialog from '@/components/shared/ConfirmActionDialog';
 
-export default function Navbar({ toggleSidebar, isSidebarOpen }) {
-  const router = useRouter();
+export default function Navbar({ toggleSidebar, isSidebarOpen, isSidebarCollapsed = false }) {
   const supabase = createClient();
 
   const [user, setUser] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [confirmLogout, setConfirmLogout] = useState(false);
 
   const fetchNotifications = useCallback(async (userId) => {
     const { data } = await supabase
@@ -51,6 +45,12 @@ export default function Navbar({ toggleSidebar, isSidebarOpen }) {
     fetchSession();
   }, [supabase, fetchNotifications]);
 
+  useEffect(() => {
+    const openNotifications = () => setShowNotifications(true);
+    window.addEventListener('ireserve:open-notifications', openNotifications);
+    return () => window.removeEventListener('ireserve:open-notifications', openNotifications);
+  }, []);
+
   async function handleMarkAsRead(notifId) {
     const { error } = await supabase
       .from('notifications')
@@ -63,37 +63,24 @@ export default function Navbar({ toggleSidebar, isSidebarOpen }) {
     }
   }
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/auth/login');
-    router.refresh();
-  };
-
-  const getRoleLabel = (role) => {
-    switch (role) {
-      case 'super_admin': return 'Super Admin';
-      case 'village_admin': return 'Village Admin';
-      case 'accounting': return 'Accounting';
-      case 'architect': return 'Architect';
-      default: return 'Customer';
-    }
-  };
-
   return (
     <>
-    <header className="fixed left-0 top-0 z-40 flex h-[61px] w-full items-center justify-between border-b border-[#e3e9e6] bg-white/95 px-4 py-3 backdrop-blur">
+    <header className={`fixed left-0 top-0 z-40 flex h-[58px] w-full items-center justify-between border-b border-[#e3e9e6] bg-white/95 px-3.5 py-2.5 backdrop-blur transition-[left,width] duration-300 ${
+      isSidebarCollapsed
+        ? 'md:left-[72px] md:w-[calc(100%-72px)]'
+        : 'md:left-[260px] md:w-[calc(100%-260px)]'
+    }`}>
       <div className="flex items-center gap-3">
         {toggleSidebar && (
           <button
             onClick={toggleSidebar}
-            className="rounded-lg border border-[#dce4e0] bg-white p-1.5 text-[#52635b] outline-none transition hover:bg-[#f4f7f5] hover:text-[#223129]"
+            className="rounded-lg border border-[#dce4e0] bg-white p-1.5 text-[#52635b] outline-none transition hover:bg-[#f4f7f5] hover:text-[#223129] md:hidden"
             aria-label="Toggle sidebar"
           >
             {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
         )}
 
-        <Link href="/" aria-label="iReserve home"><BrandLogo compact /></Link>
       </div>
 
       <div className="flex items-center gap-4">
@@ -141,7 +128,7 @@ export default function Navbar({ toggleSidebar, isSidebarOpen }) {
                           )}
                         </div>
                         <p className="leading-relaxed text-[#66756e]">{notif.message}</p>
-                        <span className="mt-1.5 block text-[9px] text-[#96a19c]">
+                        <span className="mt-1.5 block text-[11px] font-medium text-[#5f7068]">
                           {new Date(notif.created_at).toLocaleDateString()}
                         </span>
                       </div>
@@ -156,39 +143,7 @@ export default function Navbar({ toggleSidebar, isSidebarOpen }) {
           </div>
         )}
 
-        {/* Profile Card & Log Out */}
-        {user ? (
-          <div className="flex items-center gap-3 border-l border-[#e3e9e6] pl-3">
-            <div className="hidden sm:flex flex-col text-right">
-              <span className="text-sm font-bold text-[#223129]">{user.profile?.full_name}</span>
-              <span className="text-[10px] font-bold uppercase tracking-wide text-[#16835f]">
-                {getRoleLabel(user.profile?.role)}
-              </span>
-            </div>
-            
-            {user.profile?.avatar_url ? (
-              <Image
-                src={user.profile.avatar_url}
-                alt="Avatar"
-                width={36}
-                height={36}
-                className="h-9 w-9 rounded-full border border-[#dce4e0] object-cover"
-              />
-            ) : (
-              <Link href={user.profile?.role === 'customer' ? '/customer/account' : '#'} className="flex h-9 w-9 select-none items-center justify-center rounded-full border border-[#d5ded9] bg-[#f4f7f5] font-semibold text-[#52635b]" aria-label="Account settings">
-                <User className="w-4 h-4" />
-              </Link>
-            )}
-
-            <button
-              onClick={() => setConfirmLogout(true)}
-              title="Log Out"
-              className="cursor-pointer rounded-xl p-2 text-[#7c8983] outline-none transition hover:bg-[#fff1f0] hover:text-[#b42318]"
-            >
-              <LogOut className="w-4.5 h-4.5" />
-            </button>
-          </div>
-        ) : (
+        {!user && (
           <div className="flex items-center gap-3">
             <Link
               href="/auth/login"
@@ -206,17 +161,7 @@ export default function Navbar({ toggleSidebar, isSidebarOpen }) {
         )}
       </div>
     </header>
-    <div className="h-[61px] flex-shrink-0" aria-hidden="true" />
-    <ConfirmActionDialog
-      open={confirmLogout}
-      title="Log Out?"
-      message="Are you sure you want to log out of your account?"
-      cancelLabel="Stay Logged In"
-      confirmLabel="Log Out"
-      destructive
-      onCancel={() => setConfirmLogout(false)}
-      onConfirm={handleLogout}
-    />
+    <div className="h-[58px] flex-shrink-0" aria-hidden="true" />
     </>
   );
 }

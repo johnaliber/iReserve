@@ -573,7 +573,7 @@ export default function CustomerSectionPage({ section }) {
                           ))}
                         </div>
                       ) : (
-                        <div className="flex min-h-48 items-center justify-center px-3 text-center text-xs text-[#94a3b8]">
+                        <div className="flex min-h-48 items-center justify-center px-3 text-center text-sm font-medium text-[#52635b]">
                           Select an available date to view times.
                         </div>
                       )}
