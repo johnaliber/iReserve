@@ -3,6 +3,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Trash2, Link as LinkIcon, Shield, Unlock, Lock, HelpCircle } from 'lucide-react';
+import {
+  AMENITY_SHAPES,
+  AMENITY_TYPES,
+  getAmenityDefaults,
+  isAmenityObject
+} from '@/lib/blueprints/amenities';
 
 export default function PropertiesPanel({
   selectedObject,
@@ -48,10 +54,12 @@ export default function PropertiesPanel({
 
   if (!selectedObject) {
     return (
-      <aside className="w-[320px] bg-slate-900 border-l border-slate-800/80 p-4 flex flex-col justify-center items-center text-center text-slate-500 select-none">
-        <HelpCircle className="w-8 h-8 mb-2 text-slate-700" />
-        <h4 className="text-sm font-semibold text-slate-400">No Object Selected</h4>
-        <p className="text-[11px] mt-1 leading-normal max-w-[160px]">
+      <aside className="editor-properties-panel flex min-h-52 w-full select-none flex-col items-center justify-center bg-white p-5 text-center text-slate-600">
+        <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+          <HelpCircle className="h-5 w-5" />
+        </span>
+        <h4 className="text-sm font-bold text-slate-900">No object selected</h4>
+        <p className="mt-1 max-w-[220px] text-xs leading-relaxed text-slate-600">
           Click any element on the blueprint workspace to inspect and edit its properties.
         </p>
       </aside>
@@ -60,6 +68,8 @@ export default function PropertiesPanel({
 
   const { object_type, object_data = {}, is_locked = false } = selectedObject;
   const isImageLayer = object_type === 'image_layer' || (object_type === 'landmark' && object_data.kind === 'reference_image');
+  const isAmenity = isAmenityObject(selectedObject) && !isImageLayer;
+  const amenityDefaults = isAmenity ? getAmenityDefaults(selectedObject) : null;
 
   const handleDataChange = (key, value) => {
     onUpdateObject({
@@ -114,19 +124,20 @@ export default function PropertiesPanel({
   };
 
   return (
-    <aside className="w-[320px] bg-slate-900 border-l border-slate-800/80 p-4 flex flex-col select-none gap-3">
-      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-          Properties Panel
-        </span>
+    <aside className="editor-properties-panel flex w-full select-none flex-col gap-3 bg-white p-4 pt-12">
+      <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+        <div>
+          <span className="block text-sm font-bold text-slate-900">Object properties</span>
+          <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wider text-emerald-700">{object_type.replaceAll('_', ' ')}</span>
+        </div>
         <div className="flex gap-1">
           <button
             onClick={handleLockToggle}
             title={is_locked ? 'Unlock Object' : 'Lock Position'}
             className={`p-1.5 rounded-lg border transition outline-none cursor-pointer ${
               is_locked 
-                ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' 
-                : 'bg-slate-950/20 border-slate-850 text-slate-500 hover:text-slate-300'
+                ? 'border-amber-200 bg-amber-50 text-amber-700'
+                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
             }`}
           >
             {is_locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
@@ -134,7 +145,7 @@ export default function PropertiesPanel({
           <button
             onClick={() => onDeleteObject(selectedObject.id)}
             title="Delete Element"
-            className="p-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition outline-none cursor-pointer"
+            className="cursor-pointer rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-700 outline-none transition hover:bg-red-100"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -537,29 +548,156 @@ export default function PropertiesPanel({
               className="w-full bg-slate-950/50 border border-slate-800 rounded-lg p-1.5 text-xs outline-none cursor-pointer h-9"
             />
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                Text Width
+              </label>
+              <input
+                type="number"
+                min="40"
+                value={Math.round(object_data.width || 180)}
+                onChange={(e) => handleDataChange('width', Math.max(40, parseFloat(e.target.value) || 40))}
+                className="w-full rounded-lg border border-slate-800 bg-slate-950/50 p-2 text-xs text-slate-200 outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                Font Size
+              </label>
+              <input
+                type="number"
+                min="8"
+                value={Math.round(object_data.fontSize || 13)}
+                onChange={(e) => handleDataChange('fontSize', Math.max(8, parseFloat(e.target.value) || 8))}
+                className="w-full rounded-lg border border-slate-800 bg-slate-950/50 p-2 text-xs text-slate-200 outline-none"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              Alignment
+            </label>
+            <select
+              value={object_data.align || 'left'}
+              onChange={(e) => handleDataChange('align', e.target.value)}
+              className="w-full rounded-lg border border-slate-800 bg-slate-950/50 p-2 text-xs text-slate-200 outline-none"
+            >
+              <option value="left">Left</option>
+              <option value="center">Center</option>
+              <option value="right">Right</option>
+            </select>
+          </div>
         </div>
       )}
 
-      {['tree', 'street_light', 'guard_house', 'clubhouse', 'pool', 'park', 'amenity', 'landmark'].includes(object_type) && object_data.kind !== 'reference_image' && (
+      {isAmenity && (
         <div className="space-y-3">
           <div>
-            <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-              Size Diameter (px)
+            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              Amenity Name
             </label>
             <input
-              type="number"
-              value={object_data.radius * 2 || object_data.width || 30}
-              onChange={(e) => {
-                const val = parseInt(e.target.value) || 20;
-                if (object_data.radius) {
-                  handleDataChange('radius', val / 2);
-                } else {
-                  handleDataChange('width', val);
-                  handleDataChange('height', val);
+              type="text"
+              value={object_data.displayLabel || object_data.name || amenityDefaults.name}
+              onChange={(e) => onUpdateObject({
+                ...selectedObject,
+                object_data: {
+                  ...object_data,
+                  name: e.target.value,
+                  displayLabel: e.target.value
                 }
-              }}
-              className="w-full bg-slate-950/50 border border-slate-800 focus:border-emerald-500/50 rounded-lg p-2 text-xs text-slate-200 outline-none"
+              })}
+              className="w-full rounded-lg border border-slate-800 bg-slate-950/50 p-2 text-xs text-slate-200 outline-none"
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                Amenity Type
+              </label>
+              <select
+                value={object_data.amenityType || amenityDefaults.amenityType}
+                onChange={(e) => handleDataChange('amenityType', e.target.value)}
+                className="w-full rounded-lg border border-slate-800 bg-slate-950/50 p-2 text-xs text-slate-200 outline-none"
+              >
+                {AMENITY_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                Shape Type
+              </label>
+              <select
+                value={object_data.shapeType || amenityDefaults.shapeType}
+                onChange={(e) => handleDataChange('shapeType', e.target.value)}
+                className="w-full rounded-lg border border-slate-800 bg-slate-950/50 p-2 text-xs text-slate-200 outline-none"
+              >
+                {AMENITY_SHAPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              Description
+            </label>
+            <textarea
+              rows={2}
+              value={object_data.description || ''}
+              onChange={(e) => handleDataChange('description', e.target.value)}
+              placeholder="Optional amenity description"
+              className="w-full resize-none rounded-lg border border-slate-800 bg-slate-950/50 p-2 text-xs text-slate-200 outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+              {amenityDefaults.shapeType === 'polygon' ? 'Polygon Points' : 'Size (px)'}
+            </label>
+            {amenityDefaults.shapeType === 'polygon' ? (
+              <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-2 text-xs text-slate-500">
+                {Math.floor((object_data.points?.length || 0) / 2)} points
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="number"
+                  min="1"
+                  value={object_data.width || (object_data.radius ? object_data.radius * 2 : 72)}
+                  onChange={(e) => {
+                    const width = Math.max(1, parseFloat(e.target.value) || 1);
+                    if (['icon', 'circle'].includes(amenityDefaults.shapeType)) {
+                      onUpdateObject({
+                        ...selectedObject,
+                        object_data: {
+                          ...object_data,
+                          width,
+                          height: width,
+                          radius: width / 2
+                        }
+                      });
+                    } else {
+                      handleDataChange('width', width);
+                    }
+                  }}
+                  aria-label="Amenity width"
+                  className="w-full rounded-lg border border-slate-800 bg-slate-950/50 p-2 text-xs text-slate-200 outline-none"
+                />
+                <input
+                  type="number"
+                  min="1"
+                  value={object_data.height || (object_data.radius ? object_data.radius * 2 : 72)}
+                  disabled={['icon', 'circle'].includes(amenityDefaults.shapeType)}
+                  onChange={(e) => handleDataChange('height', Math.max(1, parseFloat(e.target.value) || 1))}
+                  aria-label="Amenity height"
+                  className="w-full rounded-lg border border-slate-800 bg-slate-950/50 p-2 text-xs text-slate-200 outline-none"
+                />
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -569,8 +707,8 @@ export default function PropertiesPanel({
               </label>
               <input
                 type="color"
-                value={object_data.fill || '#10b981'}
-                onChange={(e) => handleDataChange('fill', e.target.value)}
+                value={object_data.fillColor || object_data.fill || amenityDefaults.fillColor}
+                onChange={(e) => handleDataChange('fillColor', e.target.value)}
                 className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950/50 p-1.5 outline-none cursor-pointer"
               />
             </div>
@@ -580,11 +718,29 @@ export default function PropertiesPanel({
               </label>
               <input
                 type="color"
-                value={object_data.borderColor || '#047857'}
+                value={object_data.borderColor || amenityDefaults.borderColor}
                 onChange={(e) => handleDataChange('borderColor', e.target.value)}
                 className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950/50 p-1.5 outline-none cursor-pointer"
               />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            {[
+              ['showLabel', 'Show label'],
+              ['showTooltip', 'Show hover tooltip'],
+              ['showInPublicMap', 'Show in public map']
+            ].map(([key, label]) => (
+              <label key={key} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-[11px] font-semibold text-slate-300">
+                <span>{label}</span>
+                <input
+                  type="checkbox"
+                  checked={object_data[key] ?? (key !== 'showLabel')}
+                  onChange={(e) => handleDataChange(key, e.target.checked)}
+                  className="h-4 w-4 accent-emerald-600"
+                />
+              </label>
+            ))}
           </div>
         </div>
       )}

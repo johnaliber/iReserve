@@ -87,7 +87,6 @@ const accountingNav = [
 ];
 
 const architectNav = [
-  { title: 'Dashboard', href: '/architect/dashboard', icon: Home },
   { title: 'Map Canvas Editor', href: '/architect/dashboard', icon: PencilRuler }
 ];
 

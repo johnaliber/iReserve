@@ -5,7 +5,9 @@ import dynamic from 'next/dynamic';
 import { createClient } from '@/lib/supabase/client';
 import DashboardShell from '@/components/layout/DashboardShell';
 import PropertyEditorDrawer from '@/components/admin/PropertyEditorDrawer';
+import AmenityEditorDrawer from '@/components/admin/AmenityEditorDrawer';
 import { getManageableVillages } from '@/lib/villages/getManageableVillages';
+import { isAmenityObject } from '@/lib/blueprints/amenities';
 import { Map, Loader2 } from 'lucide-react';
 
 const InteractiveVillageMap = dynamic(
@@ -23,6 +25,7 @@ export default function VillageAdminBlueprintPreviewPage() {
   const [selectedObject, setSelectedObject] = useState(null);
   const [selectedProperty, setSelectedProperty] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [amenityDrawerOpen, setAmenityDrawerOpen] = useState(false);
   const [mapVersion, setMapVersion] = useState(0);
 
   const fetchInitData = useCallback(async () => {
@@ -69,17 +72,25 @@ export default function VillageAdminBlueprintPreviewPage() {
     setSelectedObject(null);
     setSelectedProperty(null);
     setDrawerOpen(false);
+    setAmenityDrawerOpen(false);
   };
 
   const handleObjectSelect = (blueprintObject, property) => {
     setSelectedObject(blueprintObject);
     setSelectedProperty(property || null);
-    setDrawerOpen(true);
+    if (isAmenityObject(blueprintObject)) {
+      setAmenityDrawerOpen(true);
+      setDrawerOpen(false);
+    } else {
+      setDrawerOpen(true);
+      setAmenityDrawerOpen(false);
+    }
   };
 
   const refreshMap = () => {
     setMapVersion((version) => version + 1);
     setDrawerOpen(false);
+    setAmenityDrawerOpen(false);
     setSelectedObject(null);
     setSelectedProperty(null);
   };
@@ -106,12 +117,12 @@ export default function VillageAdminBlueprintPreviewPage() {
               Blueprint Preview Viewport
             </h1>
             <p className="mt-1 text-xs text-[#64748b]">
-              Preview the subdivision map, inspect lot data, and update linked property details directly from lot or house objects.
+              Preview the subdivision map, update linked property details, and manage customer-facing amenity information and photos.
             </p>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="select-none text-xs font-semibold uppercase tracking-wider text-[#64748b]">Scope:</span>
+            <span className="select-none text-xs font-semibold uppercase tracking-wider text-[#64748b]">Village:</span>
             <select
               value={selectedVillageId}
               onChange={handleVillageChange}
@@ -166,6 +177,17 @@ export default function VillageAdminBlueprintPreviewPage() {
           onSaved={refreshMap}
           onDeleted={refreshMap}
         />
+
+        {amenityDrawerOpen && selectedObject && (
+          <AmenityEditorDrawer
+            key={selectedObject.id}
+            open
+            villageId={selectedVillageId}
+            blueprintObject={selectedObject}
+            onClose={() => setAmenityDrawerOpen(false)}
+            onSaved={refreshMap}
+          />
+        )}
 
       </div>
     </DashboardShell>

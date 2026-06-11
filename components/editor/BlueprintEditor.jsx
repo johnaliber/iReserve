@@ -28,7 +28,6 @@ function formatSupabaseError(err) {
 
   return parts.length > 0 ? parts.join(' ') : JSON.stringify(err);
 }
-
 function createObjectId() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -162,6 +161,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
   const [clipboardObjects, setClipboardObjects] = useState([]);
+  const [amenityShapeMode, setAmenityShapeMode] = useState('icon');
 
   useEffect(() => {
     Promise.resolve().then(() => {
@@ -687,18 +687,11 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
     e.target.value = '';
   };
 
-  const handleLoadDemo = () => {
-    if (confirm('Are you sure you want to load the starter layout template? This will replace your current workspace drawing.')) {
-      const demoObjs = getMockObjects(blueprint?.village_id || villageId, blueprintId);
-      updateObjectsWithHistory(demoObjs);
-    }
-  };
-
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400">
-        <Loader2 className="w-10 h-10 text-emerald-400 animate-spin mb-4" />
-        <span className="text-sm font-semibold uppercase tracking-wider">Loading blueprint canvas...</span>
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#f1f5f9] text-[#475569]">
+        <Loader2 className="mb-4 h-10 w-10 animate-spin text-emerald-600" />
+        <span className="text-sm font-semibold">Loading blueprint canvas...</span>
       </div>
     );
   }
@@ -706,7 +699,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
   const selectedObject = objects.find(o => o.id === selectedObjectId);
 
   return (
-    <div className="blueprint-editor-compact h-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden relative">
+    <div className="blueprint-editor-compact relative flex h-dvh flex-col overflow-hidden bg-[#f1f5f9] text-[#0f172a]">
       
       {/* 1. Header toolbar */}
       <EditorToolbar
@@ -730,16 +723,15 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
         pasteEnabled={clipboardObjects.length > 0}
         onExport={handleExport}
         onImport={handleImport}
-        onLoadDemo={handleLoadDemo}
       />
 
       {/* Save Status Notification Overlay */}
       {saveStatus && (
-        <div className="absolute top-14 left-1/2 transform -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-2 rounded-full border shadow-2xl backdrop-blur bg-slate-900/90 text-xs font-semibold select-none animate-bounce">
+        <div className="absolute left-1/2 top-16 z-50 flex -translate-x-1/2 select-none items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-4 py-2 text-xs font-semibold text-slate-700 shadow-xl backdrop-blur">
           {saveStatus === 'saving' && (
             <>
               <Loader2 className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
-              <span className="text-slate-200">Saving layout to cloud...</span>
+              <span>Saving layout to cloud...</span>
             </>
           )}
           {saveStatus === 'saved' && (
@@ -775,15 +767,20 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
               <PanelLeftOpen className="mx-auto h-5 w-5" />
             </button>
           ) : (
-            <div className="relative flex-shrink-0">
+            <div className="relative h-full min-h-0 flex-shrink-0 border-r border-slate-200 bg-white">
               <button
                 onClick={() => setLeftPanelCollapsed(true)}
                 title="Collapse tools panel"
-                className="absolute right-2 top-2 z-10 rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm transition hover:text-emerald-600"
+                className="absolute right-2 top-2 z-10 rounded-lg border border-slate-200 bg-white p-1.5 text-slate-600 shadow-sm transition hover:bg-slate-50 hover:text-emerald-700"
               >
                 <PanelLeftClose className="h-4 w-4" />
               </button>
-              <ObjectToolbox activeTool={activeTool} setActiveTool={setActiveTool} />
+              <ObjectToolbox
+                activeTool={activeTool}
+                setActiveTool={setActiveTool}
+                amenityShapeMode={amenityShapeMode}
+                setAmenityShapeMode={setAmenityShapeMode}
+              />
             </div>
           )
         )}
@@ -791,32 +788,33 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
         {/* 3. Center Canvas Stage wrapper */}
         <div className="min-w-0 flex-1 h-full flex flex-col relative overflow-hidden">
           {/* Blueprint Name Title Header bar */}
-          <div className="h-10 flex-shrink-0 bg-slate-950 border-b border-slate-900 px-4 flex items-center justify-between gap-3 text-xs text-slate-500 font-semibold select-none">
-            <span className="text-slate-400 flex items-center gap-1.5">
+          <div className="flex h-11 flex-shrink-0 select-none items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 text-xs font-semibold text-slate-600">
+            <span className="flex min-w-0 items-center gap-1.5">
               {previewMode ? (
                 <button
                   onClick={() => setPreviewMode(false)}
-                  className="hover:text-emerald-400 transition flex items-center gap-0.5 cursor-pointer outline-none font-semibold border-none bg-transparent"
+                  className="flex cursor-pointer items-center gap-1 border-none bg-transparent font-semibold text-slate-600 outline-none transition hover:text-emerald-700"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
                   Back to Editor
                 </button>
               ) : (
-                <Link href="/architect/dashboard" className="hover:text-emerald-400 transition flex items-center gap-0.5">
+                <Link href="/architect/dashboard" className="flex items-center gap-1 transition hover:text-emerald-700">
                   <ArrowLeft className="w-3.5 h-3.5" />
                   Back
                 </Link>
               )}
-              / {blueprint?.name}
+              <span className="text-slate-400">/</span>
+              <span className="truncate font-bold text-slate-900">{blueprint?.name}</span>
             </span>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] bg-slate-900 border border-slate-800 px-2 py-0.5 rounded uppercase tracking-wider">
-                Status: {blueprint?.status}
+              <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-700">
+                {blueprint?.status}
               </span>
               <span className={`text-[10px] px-2 py-0.5 rounded uppercase tracking-wider flex items-center gap-1 ${
                 hasUnsavedChanges
-                  ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
-                  : 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
+                  ? 'border border-amber-200 bg-amber-50 text-amber-800'
+                  : 'border border-emerald-200 bg-emerald-50 text-emerald-800'
               }`}>
                 <Circle className="w-2 h-2 fill-current" />
                 {hasUnsavedChanges ? 'Unsaved changes' : lastSavedAt ? `Saved ${lastSavedAt.toLocaleTimeString()}` : 'No changes'}
@@ -843,6 +841,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
             layersVisible={layersVisible}
             onSaveDraft={handleSaveDraft}
             onAddImageLayerFile={handleAddImageLayerFile}
+            amenityShapeMode={amenityShapeMode}
           />
         </div>
 
@@ -857,7 +856,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
               <PanelRightOpen className="mx-auto h-5 w-5" />
             </button>
           ) : (
-            <div className="w-[320px] flex-shrink-0 flex flex-col border-l border-slate-800/80 overflow-y-auto relative bg-slate-900">
+            <div className="relative flex w-[336px] flex-shrink-0 flex-col overflow-y-auto border-l border-slate-200 bg-slate-50">
               <button
                 onClick={() => setRightPanelCollapsed(true)}
                 title="Collapse details panel"
@@ -871,7 +870,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
                 onDeleteObject={handleDeleteObject}
                 villageId={villageId}
               />
-              <div className="border-t border-slate-800/80 bg-slate-900 p-3">
+              <div className="border-t border-slate-200 bg-slate-50 p-3">
                 <LayersPanel
                   objects={objects}
                   setObjects={updateObjectsWithHistory}
@@ -889,83 +888,3 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
     </div>
   );
 }
-
-// Fallback visual blueprint dataset template for new or unseeded villages
-const getMockObjects = (vId, bpId) => [
-  {
-    id: 'mock-road-1',
-    village_id: vId,
-    blueprint_id: bpId,
-    object_type: 'road',
-    layer_order: 1,
-    is_visible: true,
-    object_data: { name: 'Main Boulevard', points: [100, 250, 700, 250], width: 40, asphaltColor: '#e2e8f0', borderColor: '#334155', borderThickness: 6 }
-  },
-  {
-    id: 'mock-road-2',
-    village_id: vId,
-    blueprint_id: bpId,
-    object_type: 'road',
-    layer_order: 1,
-    is_visible: true,
-    object_data: { name: 'Lake Side Alley', points: [350, 250, 350, 500], width: 25, asphaltColor: '#cbd5e1', borderColor: '#475569', borderThickness: 5 }
-  },
-  {
-    id: 'mock-lot-1',
-    village_id: vId,
-    blueprint_id: bpId,
-    object_type: 'lot',
-    layer_order: 2,
-    is_visible: true,
-    linked_property_id: null,
-    object_data: { name: 'Block A Lot 1', points: [120, 100, 220, 100, 220, 200, 120, 200], fillColor: '#10b981', borderColor: '#047857' }
-  },
-  {
-    id: 'mock-lot-2',
-    village_id: vId,
-    blueprint_id: bpId,
-    object_type: 'lot',
-    layer_order: 2,
-    is_visible: true,
-    linked_property_id: null,
-    object_data: { name: 'Block A Lot 2', points: [240, 100, 340, 100, 340, 200, 240, 200], fillColor: '#f59e0b', borderColor: '#d97706' }
-  },
-  {
-    id: 'mock-lot-3',
-    village_id: vId,
-    blueprint_id: bpId,
-    object_type: 'lot',
-    layer_order: 2,
-    is_visible: true,
-    linked_property_id: null,
-    object_data: { name: 'Block A Lot 3', points: [360, 100, 460, 100, 460, 200, 360, 200], fillColor: '#ef4444', borderColor: '#b91c1c' }
-  },
-  {
-    id: 'mock-tree-1',
-    village_id: vId,
-    blueprint_id: bpId,
-    object_type: 'tree',
-    layer_order: 3,
-    is_visible: true,
-    object_data: { x: 500, y: 150, radius: 12, fill: '#059669' }
-  },
-  {
-    id: 'mock-clubhouse',
-    village_id: vId,
-    blueprint_id: bpId,
-    object_type: 'clubhouse',
-    layer_order: 3,
-    is_visible: true,
-    object_data: { x: 550, y: 320, width: 90, height: 60, fill: '#0ea5e9', name: 'Lagoon Clubhouse' }
-  },
-  {
-    id: 'mock-flood-zone',
-    village_id: vId,
-    blueprint_id: bpId,
-    object_type: 'zone',
-    layer_order: 0,
-    is_visible: true,
-    object_data: { label: 'High Flood Risk Zone', color: '#f43f5e', opacity: 0.25, points: [500, 100, 800, 100, 800, 220, 500, 220] }
-  }
-];
-

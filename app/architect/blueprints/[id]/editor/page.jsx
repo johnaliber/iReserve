@@ -43,15 +43,15 @@ export default function ArchitectEditorPage({ params }) {
 
   if (loading) {
     return (
-      <div className="h-screen w-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400">
-        <Loader2 className="w-8 h-8 text-emerald-400 animate-spin mb-3" />
-        <span className="text-xs font-semibold uppercase tracking-wider">Mounting architect workspace...</span>
+      <div className="flex h-dvh w-screen flex-col items-center justify-center bg-[#f1f5f9] text-[#475569]">
+        <Loader2 className="mb-3 h-8 w-8 animate-spin text-emerald-600" />
+        <span className="text-xs font-semibold">Preparing architect workspace...</span>
       </div>
     );
   }
 
   return (
-    <div className="h-screen w-screen bg-slate-950 overflow-hidden">
+    <div className="h-dvh w-screen overflow-hidden bg-[#f1f5f9]">
       <BlueprintEditor blueprintId={blueprintId} villageId={villageId} />
     </div>
   );

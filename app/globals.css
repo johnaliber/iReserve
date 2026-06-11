@@ -296,6 +296,78 @@ body {
 
 .blueprint-editor-compact {
   font-size: 0.94rem;
+  color: #0f172a;
+}
+
+/* The app remaps Tailwind's slate palette globally. Restore conventional
+   light-editor colors only inside the blueprint workspace. */
+.blueprint-editor-compact .bg-slate-50 {
+  background-color: #f8fafc;
+}
+
+.blueprint-editor-compact .bg-slate-100 {
+  background-color: #f1f5f9;
+}
+
+.blueprint-editor-compact .bg-slate-200 {
+  background-color: #e2e8f0;
+}
+
+.blueprint-editor-compact .bg-slate-900 {
+  background-color: #0f172a;
+}
+
+.blueprint-editor-compact .bg-slate-950 {
+  background-color: #020617;
+}
+
+.blueprint-editor-compact .border-slate-200,
+.blueprint-editor-compact .border-slate-200\/80 {
+  border-color: #e2e8f0;
+}
+
+.blueprint-editor-compact .border-slate-300 {
+  border-color: #cbd5e1;
+}
+
+.blueprint-editor-compact .text-slate-400 {
+  color: #94a3b8;
+}
+
+.blueprint-editor-compact .text-slate-500 {
+  color: #64748b;
+}
+
+.blueprint-editor-compact .text-slate-600 {
+  color: #475569;
+}
+
+.blueprint-editor-compact .text-slate-700 {
+  color: #334155;
+}
+
+.blueprint-editor-compact .text-slate-900 {
+  color: #0f172a;
+}
+
+.blueprint-editor-compact .text-white {
+  color: #fff;
+}
+
+.blueprint-editor-compact .hover\:bg-slate-50:hover {
+  background-color: #f8fafc;
+}
+
+.blueprint-editor-compact .hover\:bg-slate-100:hover {
+  background-color: #f1f5f9;
+}
+
+.blueprint-editor-compact .hover\:bg-slate-200:hover {
+  background-color: #e2e8f0;
+}
+
+.blueprint-editor-compact .hover\:text-slate-900:hover {
+  color: #0f172a;
 }
 
 .blueprint-editor-compact .editor-toolbar .p-2 {
@@ -310,6 +382,78 @@ body {
 .blueprint-editor-compact .editor-toolbar .py-2 {
   padding-top: 0.4rem;
   padding-bottom: 0.4rem;
+}
+
+.blueprint-editor-compact .editor-properties-panel {
+  color: #334155;
+}
+
+.blueprint-editor-compact .editor-properties-panel > div {
+  border-color: #e2e8f0;
+  background-color: #fff;
+}
+
+.blueprint-editor-compact .editor-properties-panel label,
+.blueprint-editor-compact .editor-properties-panel h5 {
+  color: #475569;
+}
+
+.blueprint-editor-compact .editor-properties-panel input:not([type='checkbox']):not([type='range']),
+.blueprint-editor-compact .editor-properties-panel select,
+.blueprint-editor-compact .editor-properties-panel textarea {
+  min-height: 2.25rem;
+  border-color: #cbd5e1;
+  background: #fff;
+  color: #0f172a;
+}
+
+.blueprint-editor-compact .editor-properties-panel input:focus,
+.blueprint-editor-compact .editor-properties-panel select:focus,
+.blueprint-editor-compact .editor-properties-panel textarea:focus {
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+}
+
+.blueprint-editor-compact .editor-properties-panel input[type='range'] {
+  accent-color: #059669;
+}
+
+.blueprint-editor-compact .editor-properties-panel input[type='color'] {
+  padding: 0.25rem;
+}
+
+.blueprint-editor-compact .editor-toolbox-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #f8fafc;
+}
+
+.blueprint-editor-compact .editor-toolbox-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.blueprint-editor-compact .editor-toolbox-scroll::-webkit-scrollbar-track {
+  background: #f8fafc;
+}
+
+.blueprint-editor-compact .editor-toolbox-scroll::-webkit-scrollbar-thumb {
+  border: 1px solid #f8fafc;
+  border-radius: 9999px;
+  background: #94a3b8;
+}
+
+.blueprint-editor-compact .editor-properties-panel [class*='bg-slate-9'] {
+  background-color: #f8fafc;
+}
+
+.blueprint-editor-compact .editor-properties-panel [class*='border-slate-8'] {
+  border-color: #e2e8f0;
+}
+
+.blueprint-editor-compact .editor-properties-panel [class*='text-slate-2'],
+.blueprint-editor-compact .editor-properties-panel [class*='text-slate-3'],
+.blueprint-editor-compact .editor-properties-panel [class*='text-slate-4'],
+.blueprint-editor-compact .editor-properties-panel [class*='text-slate-5'] {
+  color: #475569;
 }
 
 .dashboard-compact button,

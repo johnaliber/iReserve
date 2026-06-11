@@ -1,7 +1,8 @@
 'use client';
 
 import React, { memo, useRef, useState, useEffect } from 'react';
-import { Stage, Layer, Line, Circle, Rect, Text, Group, Transformer, Shape, Image as KonvaImage } from 'react-konva';
+import { Stage, Layer, Line, Circle, Rect, Text, Group, Transformer, Shape, Ellipse, Image as KonvaImage } from 'react-konva';
+import { createAmenityData, getAmenityDefaults, isAmenityObject } from '@/lib/blueprints/amenities';
 import { findNearestSnapPoint, snapToGrid } from '@/lib/editor/snapUtils';
 
 const STAGE_WIDTH = 3000;
@@ -174,7 +175,8 @@ export default function CanvasStage({
   multiSelectEnabled = false,
   layersVisible,
   onSaveDraft,
-  onAddImageLayerFile
+  onAddImageLayerFile,
+  amenityShapeMode = 'icon'
 }) {
   const stageRef = useRef(null);
   const transformerRef = useRef(null);
@@ -311,8 +313,8 @@ export default function CanvasStage({
       const newPoints = [...drawingPoints, clickedPoint.x, clickedPoint.y];
       setDrawingPoints(newPoints);
     } 
-    // B. Handle Lot Boundary Drawing
-    else if (activeTool === 'lot_polygon') {
+    // B. Handle polygon boundary drawing
+    else if (activeTool === 'lot_polygon' || (activeTool.startsWith('amenity_') && amenityShapeMode === 'polygon')) {
       // Check if clicking near starting vertex to close the polygon
       if (drawingPoints.length >= 6) {
         const startX = drawingPoints[0];
@@ -321,21 +323,33 @@ export default function CanvasStage({
         
         if (dist < 15) {
           // Close polygon shape!
-          const newLot = {
-            id: `lot-${Date.now()}`,
-            village_id: null, // Will map in editor
-            blueprint_id: null,
-            object_type: 'lot',
-            object_data: {
-              points: [...drawingPoints],
-              fillColor: '#10b981', // default available green
-              borderColor: '#047857'
-            },
-            layer_order: 4,
-            is_visible: true,
-            is_locked: false
-          };
-          commitObjects([...objects, newLot]);
+          const polygonObject = activeTool === 'lot_polygon'
+            ? {
+                id: `lot-${Date.now()}`,
+                village_id: null,
+                blueprint_id: null,
+                object_type: 'lot',
+                object_data: {
+                  points: [...drawingPoints],
+                  fillColor: '#10b981',
+                  borderColor: '#047857'
+                },
+                layer_order: 4,
+                is_visible: true,
+                is_locked: false
+              }
+            : {
+                id: `amenity-${Date.now()}`,
+                object_type: 'amenity',
+                object_data: {
+                  ...createAmenityData(activeTool, 'polygon', clickedPoint),
+                  points: [...drawingPoints]
+                },
+                layer_order: 5,
+                is_visible: true,
+                is_locked: false
+              };
+          commitObjects([...objects, polygonObject]);
           cancelDrawing();
           // Keep active tool for consecutive placements
           return;
@@ -365,47 +379,11 @@ export default function CanvasStage({
           is_visible: true,
           is_locked: false
         };
-      } else if (activeTool === 'amenity_tree') {
+      } else if (activeTool.startsWith('amenity_')) {
         newObj = {
-          id: `tree-${Date.now()}`,
-          object_type: 'tree',
-          object_data: { x: clickedPoint.x, y: clickedPoint.y, radius: 12, fill: '#059669' },
-          layer_order: 5,
-          is_visible: true,
-          is_locked: false
-        };
-      } else if (activeTool === 'amenity_clubhouse') {
-        newObj = {
-          id: `clubhouse-${Date.now()}`,
-          object_type: 'clubhouse',
-          object_data: { x: clickedPoint.x, y: clickedPoint.y, width: 90, height: 60, fill: '#0ea5e9', name: 'Grand Clubhouse' },
-          layer_order: 5,
-          is_visible: true,
-          is_locked: false
-        };
-      } else if (activeTool === 'amenity_pool') {
-        newObj = {
-          id: `pool-${Date.now()}`,
-          object_type: 'pool',
-          object_data: { x: clickedPoint.x, y: clickedPoint.y, width: 80, height: 45, fill: '#0284c7' },
-          layer_order: 5,
-          is_visible: true,
-          is_locked: false
-        };
-      } else if (activeTool === 'amenity_guard') {
-        newObj = {
-          id: `guard-${Date.now()}`,
-          object_type: 'guard_house',
-          object_data: { x: clickedPoint.x, y: clickedPoint.y, radius: 15, fill: '#f43f5e', name: 'Security Guardhouse' },
-          layer_order: 5,
-          is_visible: true,
-          is_locked: false
-        };
-      } else if (activeTool === 'amenity_light') {
-        newObj = {
-          id: `light-${Date.now()}`,
-          object_type: 'street_light',
-          object_data: { x: clickedPoint.x, y: clickedPoint.y, radius: 8, fill: '#fbbf24' },
+          id: `amenity-${Date.now()}`,
+          object_type: 'amenity',
+          object_data: createAmenityData(activeTool, amenityShapeMode, clickedPoint),
           layer_order: 5,
           is_visible: true,
           is_locked: false
@@ -414,7 +392,17 @@ export default function CanvasStage({
         newObj = {
           id: `label-${Date.now()}`,
           object_type: 'label',
-          object_data: { x: clickedPoint.x, y: clickedPoint.y, text: 'New Street Label', fill: '#272727', fontSize: 13 },
+          object_data: {
+            x: clickedPoint.x,
+            y: clickedPoint.y,
+            width: 180,
+            text: 'New Street Label',
+            fill: '#272727',
+            fontSize: 13,
+            fontFamily: 'Inter',
+            fontStyle: 'bold',
+            align: 'left'
+          },
           layer_order: 6,
           is_visible: true,
           is_locked: false
@@ -541,6 +529,24 @@ export default function CanvasStage({
       commitObjects([...objects, newRoad]);
       cancelDrawing();
       // Keep active tool for consecutive placements
+    }
+    if (activeTool.startsWith('amenity_') && amenityShapeMode === 'polygon' && drawingPoints.length >= 6) {
+      const newAmenity = {
+        id: `amenity-${Date.now()}`,
+        object_type: 'amenity',
+        object_data: {
+          ...createAmenityData(activeTool, 'polygon', {
+            x: drawingPoints[0],
+            y: drawingPoints[1]
+          }),
+          points: [...drawingPoints]
+        },
+        layer_order: 5,
+        is_visible: true,
+        is_locked: false
+      };
+      commitObjects([...objects, newAmenity]);
+      cancelDrawing();
     }
   };
 
@@ -699,7 +705,14 @@ export default function CanvasStage({
 
       const data = { ...obj.object_data };
 
-      if (data.points) {
+      if (obj.object_type === 'label') {
+        const currentFontSize = data.fontSize || 13;
+        data.x = node.x();
+        data.y = node.y();
+        data.width = Math.max(40, node.width() * scaleX);
+        data.fontSize = Math.max(8, currentFontSize * scaleY);
+        data.rotation = node.rotation();
+      } else if (data.points) {
         const sourceBox = getPointsBox(data.points);
         const nextPoints = [];
         for (let idx = 0; idx < data.points.length; idx += 2) {
@@ -782,7 +795,7 @@ export default function CanvasStage({
 
   return (
     <div
-      className="min-h-0 min-w-0 flex-1 bg-slate-950 relative overflow-auto h-full w-full canvas-grid-bg"
+      className="canvas-grid-bg relative h-full w-full min-h-0 min-w-0 flex-1 overflow-auto bg-[#e2e8f0]"
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleCanvasDrop}
     >
@@ -1020,60 +1033,59 @@ export default function CanvasStage({
               );
             })}
 
-          {/* Trees / Lights / Landmarks */}
+          {/* Amenities: legacy markers and new custom shapes */}
           {layersVisible.amenities !== false && sortedObjects
-            .filter(o => o.object_type === 'tree' || o.object_type === 'street_light' || o.object_type === 'guard_house')
-            .map((am) => {
-              const data = am.object_data || {};
-              const radius = data.radius || 12;
-              
-              return (
-                <Circle
-                  key={am.id}
-                  id={am.id}
-                  x={data.x || 0}
-                  y={data.y || 0}
-                  radius={radius}
-                  fill={data.fill || '#10b981'}
-                  stroke={selectedObjectIds.includes(am.id) ? '#fbbf24' : (data.borderColor || '#334155')}
-                  strokeWidth={selectedObjectIds.includes(am.id) ? 3 : 1}
-                  opacity={am.is_visible ? (data.opacity ?? 0.9) : 0}
-                  rotation={data.rotation || 0}
-                  draggable={(activeTool === 'select' || activeTool === 'multi_select') && !am.is_locked}
-                  onDragStart={(e) => handleObjectDragStart(e, am.id)}
-                  onDragMove={(e) => handleObjectDragMove(e, am.id)}
-                  onDragEnd={(e) => handleDragEnd(e, am.id)}
-                  onClick={() => handleSelectObject(am.id)}
-                />
-              );
-            })}
+            .filter(isAmenityObject)
+            .map((amenity) => {
+              const data = amenity.object_data || {};
+              const defaults = getAmenityDefaults(amenity);
+              const isSelected = selectedObjectIds.includes(amenity.id);
+              const canDrag = (activeTool === 'select' || activeTool === 'multi_select') && !amenity.is_locked;
+              const sharedProps = {
+                id: amenity.id,
+                fill: defaults.fillColor,
+                stroke: isSelected ? '#f59e0b' : defaults.borderColor,
+                strokeWidth: isSelected ? 3 : 1.5,
+                opacity: amenity.is_visible ? defaults.opacity : 0,
+                rotation: data.rotation || 0,
+                draggable: canDrag,
+                onDragStart: (e) => handleObjectDragStart(e, amenity.id),
+                onDragMove: (e) => handleObjectDragMove(e, amenity.id),
+                onDragEnd: (e) => handleDragEnd(e, amenity.id),
+                onClick: () => handleSelectObject(amenity.id)
+              };
+              let shape;
+              let labelX = data.x || 0;
+              let labelY = (data.y || 0) - 18;
 
-          {/* Sprawling Buildings (Clubhouse, pool) */}
-          {layersVisible.amenities !== false && sortedObjects
-            .filter(o => o.object_type === 'clubhouse' || o.object_type === 'pool')
-            .map((b) => {
-              const data = b.object_data || {};
-              
+              if (defaults.shapeType === 'polygon' && data.points?.length >= 6) {
+                const localShape = getLocalPointShape(data.points);
+                labelX = localShape.x;
+                labelY = localShape.y - 18;
+                shape = <Line {...sharedProps} x={localShape.x} y={localShape.y} points={localShape.points} closed lineJoin="round" />;
+              } else if (defaults.shapeType === 'rectangle') {
+                shape = <Rect {...sharedProps} x={data.x || 0} y={data.y || 0} width={data.width || 100} height={data.height || 64} cornerRadius={5} />;
+              } else if (defaults.shapeType === 'ellipse') {
+                shape = <Ellipse {...sharedProps} x={data.x || 0} y={data.y || 0} radiusX={(data.width || 90) / 2} radiusY={(data.height || 56) / 2} />;
+              } else {
+                shape = <Circle {...sharedProps} x={data.x || 0} y={data.y || 0} radius={data.radius || Math.max(10, (data.width || 36) / 2)} />;
+              }
+
               return (
-                <Rect
-                  key={b.id}
-                  id={b.id}
-                  x={data.x || 0}
-                  y={data.y || 0}
-                  width={data.width || 80}
-                  height={data.height || 50}
-                  fill={data.fill || '#0284c7'}
-                  stroke={selectedObjectIds.includes(b.id) ? '#fbbf24' : (data.borderColor || '#1e293b')}
-                  strokeWidth={selectedObjectIds.includes(b.id) ? 3 : 1.5}
-                  cornerRadius={4}
-                  opacity={b.is_visible ? (data.opacity ?? 0.95) : 0}
-                  rotation={data.rotation || 0}
-                  draggable={(activeTool === 'select' || activeTool === 'multi_select') && !b.is_locked}
-                  onDragStart={(e) => handleObjectDragStart(e, b.id)}
-                  onDragMove={(e) => handleObjectDragMove(e, b.id)}
-                  onDragEnd={(e) => handleDragEnd(e, b.id)}
-                  onClick={() => handleSelectObject(b.id)}
-                />
+                <React.Fragment key={amenity.id}>
+                  {shape}
+                  {defaults.showLabel && amenity.is_visible !== false && (
+                    <Text
+                      x={labelX}
+                      y={labelY}
+                      text={defaults.name}
+                      fontSize={11}
+                      fontStyle="bold"
+                      fill="#0f172a"
+                      listening={false}
+                    />
+                  )}
+                </React.Fragment>
               );
             })}
 
@@ -1089,9 +1101,12 @@ export default function CanvasStage({
                   x={data.x || 0}
                   y={data.y || 0}
                   text={data.text || ''}
+                  width={data.width || 180}
                   fill={selectedObjectIds.includes(lbl.id) ? '#fbbf24' : (data.fill || '#272727')}
                   fontSize={data.fontSize || 12}
-                  fontStyle="bold"
+                  fontFamily={data.fontFamily || 'Inter'}
+                  fontStyle={data.fontStyle || 'bold'}
+                  align={data.align || 'left'}
                   opacity={lbl.is_visible ? (data.opacity ?? 1) : 0}
                   rotation={data.rotation || 0}
                   draggable={(activeTool === 'select' || activeTool === 'multi_select') && !lbl.is_locked}
@@ -1208,9 +1223,9 @@ export default function CanvasStage({
       </Stage>
 
       {/* Mini Legend overlay widget */}
-      <div className="absolute bottom-4 left-4 p-3 bg-slate-900/90 border border-slate-800 rounded-xl flex items-center gap-4 text-[10px] select-none z-10 glass-card">
-        <span className="font-bold text-slate-400 uppercase tracking-wider block">Editor Instructions</span>
-        <div className="flex gap-3 text-slate-500 font-medium">
+      <div className="absolute bottom-4 left-4 z-10 flex max-w-[calc(100%-2rem)] select-none items-center gap-3 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-[10px] text-slate-600 shadow-lg backdrop-blur">
+        <span className="block whitespace-nowrap font-extrabold uppercase tracking-wider text-emerald-700">Current tool help</span>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 font-medium">
           <span>• Double-click to complete roads.</span>
           <span>• Click the first corner again to complete lot polygons.</span>
           <span>• Press ESC to cancel drawing.</span>

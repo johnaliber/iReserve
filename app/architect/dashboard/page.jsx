@@ -17,7 +17,6 @@ import {
   MapPinned,
   PencilRuler,
   Plus,
-  RefreshCw,
   Trash2,
   X
 } from 'lucide-react';
@@ -394,31 +393,30 @@ export default function ArchitectDashboardPage() {
   return (
     <DashboardShell>
       <div className="mx-auto max-w-[1680px] space-y-6 pb-10">
-        <header className="overflow-hidden rounded-3xl border border-[#dce7e2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_40px_rgba(15,23,42,0.045)]">
-          <div className="h-1.5 bg-gradient-to-r from-[#16835f] via-[#21a77a] to-[#8bd8bc]" />
-          <div className="flex flex-col gap-6 p-6 lg:p-7 xl:flex-row xl:items-center xl:justify-between">
+        <header className="border-b border-[#dce7e2] pb-5">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div className="flex items-start gap-4">
-              <div className="hidden h-13 w-13 shrink-0 items-center justify-center rounded-2xl bg-[#eaf8f2] text-[#16835f] sm:flex">
+              <div className="hidden h-11 w-11 shrink-0 items-center justify-center text-[#16835f] sm:flex">
                 <MapPinned className="h-7 w-7" />
               </div>
               <div>
-                <div className="mb-2 flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.18em] text-[#16835f]">
+                <div className="mb-1 flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.18em] text-[#16835f]">
                   <CircleDot className="h-3 w-3 fill-emerald-500 text-emerald-500" />
                   Architect workspace
                 </div>
                 <h1 className="text-2xl font-extrabold tracking-tight text-[#17211d] sm:text-3xl">
                   Village Live Preview
                 </h1>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-[#64748b]">
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-[#64748b]">
                   Monitor the active site plan, validate mapped inventory, and continue designing from one workspace.
                 </p>
               </div>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-2 text-[9px] font-extrabold uppercase tracking-[0.1em] text-[#8a9a93]">
-                  Active village
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <label className="block">
+                <span className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#52635b]">
+                  Village
                 </span>
                 <select
                   value={selectedRow?.village.id || ''}
@@ -427,7 +425,7 @@ export default function ArchitectDashboardPage() {
                     setPreviewVersion((version) => version + 1);
                   }}
                   disabled={rows.length === 0}
-                  className="h-10 min-w-52 appearance-none rounded-xl border border-[#d6e0db] bg-[#fbfcfb] px-3 pb-1 pt-4 text-sm font-extrabold text-[#223129] shadow-sm outline-none transition focus:border-[#16835f] focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+                  className="h-10 min-w-52 rounded-lg border border-[#cbd5e1] bg-white px-3 text-sm font-semibold text-[#223129] outline-none transition focus:border-[#16835f] focus:ring-2 focus:ring-emerald-500/10"
                   aria-label="Select village preview"
                 >
                   {rows.length === 0 ? (
@@ -440,24 +438,12 @@ export default function ArchitectDashboardPage() {
                     ))
                   )}
                 </select>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setPreviewVersion((version) => version + 1);
-                  fetchArchitectData();
-                }}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#d6e0db] bg-white px-3 text-xs font-extrabold text-[#52635b] shadow-sm transition hover:border-[#b9cbc2] hover:bg-[#f7faf8]"
-              >
-                <RefreshCw className="h-4 w-4" />
-                Refresh
-              </button>
+              </label>
 
               {selectedRow?.blueprint ? (
                 <Link
                   href={`/architect/blueprints/${selectedRow.blueprint.id}/editor`}
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#16835f] px-4 text-xs font-extrabold !text-white shadow-[0_8px_18px_rgba(22,131,95,0.22)] transition hover:-translate-y-0.5 hover:bg-[#116f50]"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#16835f] px-4 text-xs font-extrabold !text-white shadow-sm transition hover:bg-[#116f50]"
                 >
                   <PencilRuler className="h-4 w-4" />
                   Open Canvas Editor
@@ -467,7 +453,7 @@ export default function ArchitectDashboardPage() {
                   type="button"
                   onClick={openCreateForm}
                   disabled={!selectedRow || !canManageBlueprints}
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#16835f] px-4 text-xs font-extrabold !text-white shadow-[0_8px_18px_rgba(22,131,95,0.22)] transition hover:-translate-y-0.5 hover:bg-[#116f50] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#16835f] px-4 text-xs font-extrabold !text-white shadow-sm transition hover:bg-[#116f50] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Plus className="h-4 w-4" />
                   Create Blueprint

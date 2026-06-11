@@ -25,7 +25,7 @@ export default function LayersPanel({
   setSelectedObjectIds,
   onAddImageLayer
 }) {
-  const [isOpen, setIsOpen] = React.useState(false);
+  const [isOpen, setIsOpen] = React.useState(true);
 
   const updateObject = (objectId, updater) => {
     setObjects?.(
@@ -46,29 +46,29 @@ export default function LayersPanel({
   const sortedObjects = [...objects].sort((a, b) => (b.layer_order || 0) - (a.layer_order || 0));
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-950/30 select-none">
+    <div className="select-none overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <button
         onClick={() => setIsOpen((current) => !current)}
-        className="flex w-full items-center justify-between px-3 py-2.5 text-left"
+        className="flex w-full items-center justify-between px-3 py-3 text-left hover:bg-slate-50"
       >
         <div className="flex items-center gap-2">
-          <Layers className="h-4 w-4 text-emerald-400" />
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Objects</span>
-          <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-bold text-slate-500">{objects.length}</span>
+          <Layers className="h-4 w-4 text-emerald-700" />
+          <span className="text-xs font-bold text-slate-900">Layers & Objects</span>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">{objects.length}</span>
         </div>
         {isOpen ? <ChevronDown className="h-4 w-4 text-slate-500" /> : <ChevronRight className="h-4 w-4 text-slate-500" />}
       </button>
 
       {isOpen && (
-        <div className="max-h-72 space-y-1 overflow-y-auto border-t border-slate-800 p-2.5">
-          <label className="mb-2 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[11px] font-bold text-emerald-300 transition hover:bg-emerald-500/15">
+        <div className="max-h-80 space-y-1.5 overflow-y-auto border-t border-slate-200 p-2.5">
+          <label className="mb-2 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-800 transition hover:bg-emerald-100">
             <ImagePlus className="h-3.5 w-3.5" />
             Add Image Layer
             <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" onChange={onAddImageLayer} className="hidden" />
           </label>
 
           {sortedObjects.length === 0 ? (
-            <p className="rounded-lg border border-slate-800 bg-slate-950/40 p-3 text-[11px] text-slate-500">
+            <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-center text-[11px] text-slate-600">
               No objects on the canvas yet.
             </p>
           ) : sortedObjects.map((object) => {
@@ -81,10 +81,10 @@ export default function LayersPanel({
                   setSelectedObjectId?.(object.id);
                   setSelectedObjectIds?.([object.id]);
                 }}
-                className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-xs transition cursor-pointer ${
+                className={`flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 text-xs transition ${
                   isSelected
-                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                    : 'border-slate-800 bg-slate-950/40 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
+                    : 'border-transparent bg-slate-50 text-slate-700 hover:border-slate-200 hover:bg-white'
                 }`}
               >
                 <button
@@ -93,7 +93,7 @@ export default function LayersPanel({
                     e.stopPropagation();
                     updateObject(object.id, (item) => ({ ...item, is_visible: item.is_visible === false }));
                   }}
-                  className="text-slate-500 hover:text-white"
+                  className="rounded p-1 text-slate-500 hover:bg-slate-200 hover:text-slate-900"
                 >
                   {object.is_visible === false ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 </button>
@@ -104,7 +104,7 @@ export default function LayersPanel({
                     e.stopPropagation();
                     updateObject(object.id, (item) => ({ ...item, is_locked: !item.is_locked }));
                   }}
-                  className="text-slate-500 hover:text-white"
+                  className="rounded p-1 text-slate-500 hover:bg-slate-200 hover:text-slate-900"
                 >
                   {object.is_locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
                 </button>
@@ -117,7 +117,7 @@ export default function LayersPanel({
                     e.stopPropagation();
                     moveObject(object.id, 1);
                   }}
-                  className="text-slate-500 hover:text-emerald-300"
+                  className="rounded p-1 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700"
                 >
                   <ArrowUp className="h-3.5 w-3.5" />
                 </button>
@@ -127,7 +127,7 @@ export default function LayersPanel({
                     e.stopPropagation();
                     moveObject(object.id, -1);
                   }}
-                  className="text-slate-500 hover:text-emerald-300"
+                  className="rounded p-1 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700"
                 >
                   <ArrowDown className="h-3.5 w-3.5" />
                 </button>

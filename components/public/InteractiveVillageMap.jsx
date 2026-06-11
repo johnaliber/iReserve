@@ -4,6 +4,7 @@ import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic';
 import { createClient } from '@/lib/supabase/client';
 import PropertyDetailModal from './PropertyDetailModal';
+import AmenityTooltip from '@/components/map/AmenityTooltip';
 import { 
   Layers, 
   SlidersHorizontal, 
@@ -20,7 +21,8 @@ import Link from 'next/link';
 import DelayedLoadingState from '@/components/shared/DelayedLoadingState';
 
 // Synchronous react-konva imports, component is loaded dynamically by parent pages to avoid SSR issues
-import { Stage, Layer, Line, Circle, Rect, Text, Group, Shape, Image as KonvaImage } from 'react-konva';
+import { Stage, Layer, Line, Circle, Rect, Text, Group, Shape, Ellipse, Image as KonvaImage } from 'react-konva';
+import { getAmenityDefaults, isAmenityObject } from '@/lib/blueprints/amenities';
 
 const DEFAULT_CANVAS = { width: 3000, height: 2200 };
 
@@ -537,6 +539,15 @@ export default function InteractiveVillageMap({
     requestAnimationFrame(updateHoverPreviewPosition);
   };
 
+  const showAmenityPreview = (object) => {
+    setHoverPreview({
+      object,
+      amenity: getAmenityDefaults(object),
+      property: null
+    });
+    requestAnimationFrame(updateHoverPreviewPosition);
+  };
+
   useEffect(() => {
     if (hoverPreview) requestAnimationFrame(updateHoverPreviewPosition);
   }, [hoverPreview]);
@@ -1015,7 +1026,7 @@ export default function InteractiveVillageMap({
 
           {/* Layer 2: Lot boundary polygons */}
           <Layer>
-            {objects
+            {layers.lots && objects
               .filter(o => o.object_type === 'lot' || o.object_type === 'house')
               .filter((lot) => {
                 const prop = getPropertyForObject(lot);
@@ -1089,53 +1100,121 @@ export default function InteractiveVillageMap({
                 );
               })}
 
-            {/* Tree amenities and lights */}
-            {objects
-              .filter(o => o.object_type === 'tree' || o.object_type === 'street_light')
-              .map((am) => {
-                const data = am.object_data || {};
-                return (
-                  <Circle
-                    key={am.id}
-                    x={data.x || 0}
-                    y={data.y || 0}
-                    radius={data.radius || 8}
-                    fill={data.fill || '#10b981'}
-                    stroke="#1e293b"
-                    strokeWidth={1}
-                  />
-                );
-              })}
+            {/* Public amenities, including legacy objects and custom shapes */}
+            {layers.amenities && objects
+              .filter((object) => isAmenityObject(object) && (object.is_visible !== false || adminShowHidden))
+              .filter((object) => adminPropertyMode || getAmenityDefaults(object).showInPublicMap)
+              .map((amenity) => {
+                const data = amenity.object_data || {};
+                const defaults = getAmenityDefaults(amenity);
+                const interactive = defaults.showTooltip || adminPropertyMode;
+                const eventProps = interactive ? {
+                  listening: true,
+                  onMouseEnter: () => {
+                    setStageCursor('pointer');
+                    if (defaults.showTooltip) showAmenityPreview(amenity);
+                  },
+                  onMouseMove: () => {
+                    if (defaults.showTooltip) updateHoverPreviewPosition();
+                  },
+                  onMouseLeave: () => {
+                    setStageCursor('grab');
+                    setHoverPreview(null);
+                  },
+                  onClick: () => {
+                    if (adminPropertyMode) {
+                      onAdminObjectSelect?.(amenity, null);
+                    } else if (defaults.showTooltip) {
+                      showAmenityPreview(amenity);
+                    }
+                  },
+                  onTap: () => {
+                    if (adminPropertyMode) {
+                      onAdminObjectSelect?.(amenity, null);
+                    } else if (defaults.showTooltip) {
+                      showAmenityPreview(amenity);
+                    }
+                  }
+                } : { listening: false };
+                let shape;
 
-            {/* Buildings (clubhouse, pool) */}
-            {objects
-              .filter(o => o.object_type === 'clubhouse' || o.object_type === 'pool' || o.object_type === 'guard_house')
-              .map((b) => {
-                const data = b.object_data || {};
-                if (b.object_type === 'guard_house') {
-                  return (
-                    <Circle
-                      key={b.id}
+                if (defaults.shapeType === 'polygon' && data.points?.length >= 6) {
+                  shape = (
+                    <Line
+                      points={data.points}
+                      closed
+                      lineJoin="round"
+                      fill={defaults.fillColor}
+                      stroke={defaults.borderColor}
+                      strokeWidth={2}
+                      opacity={defaults.opacity}
+                      {...eventProps}
+                    />
+                  );
+                } else if (defaults.shapeType === 'rectangle') {
+                  shape = (
+                    <Rect
                       x={data.x || 0}
                       y={data.y || 0}
-                      radius={data.radius || 15}
-                      fill={data.fill || '#ef4444'}
-                      stroke="#1e293b"
+                      width={data.width || 100}
+                      height={data.height || 64}
+                      rotation={data.rotation || 0}
+                      fill={defaults.fillColor}
+                      stroke={defaults.borderColor}
+                      strokeWidth={1.5}
+                      cornerRadius={5}
+                      opacity={defaults.opacity}
+                      {...eventProps}
+                    />
+                  );
+                } else if (defaults.shapeType === 'ellipse') {
+                  shape = (
+                    <Ellipse
+                      x={data.x || 0}
+                      y={data.y || 0}
+                      radiusX={(data.width || 90) / 2}
+                      radiusY={(data.height || 56) / 2}
+                      rotation={data.rotation || 0}
+                      fill={defaults.fillColor}
+                      stroke={defaults.borderColor}
+                      strokeWidth={1.5}
+                      opacity={defaults.opacity}
+                      {...eventProps}
+                    />
+                  );
+                } else {
+                  shape = (
+                    <Circle
+                      x={data.x || 0}
+                      y={data.y || 0}
+                      radius={data.radius || Math.max(10, (data.width || 36) / 2)}
+                      fill={defaults.fillColor}
+                      stroke={defaults.borderColor}
+                      strokeWidth={1.5}
+                      opacity={defaults.opacity}
+                      {...eventProps}
                     />
                   );
                 }
+
+                const labelX = data.points?.length >= 2 ? data.points[0] : (data.x || 0);
+                const labelY = data.points?.length >= 2 ? data.points[1] - 16 : (data.y || 0) - 18;
+
                 return (
-                  <Rect
-                    key={b.id}
-                    x={data.x || 0}
-                    y={data.y || 0}
-                    width={data.width || 80}
-                    height={data.height || 50}
-                    fill={data.fill || '#0284c7'}
-                    stroke="#1e293b"
-                    strokeWidth={1.5}
-                    cornerRadius={4}
-                  />
+                  <React.Fragment key={amenity.id}>
+                    {shape}
+                    {defaults.showLabel && (
+                      <Text
+                        x={labelX}
+                        y={labelY}
+                        text={defaults.name}
+                        fontSize={11}
+                        fontStyle="bold"
+                        fill="#0f172a"
+                        listening={false}
+                      />
+                    )}
+                  </React.Fragment>
                 );
               })}
 
@@ -1150,9 +1229,12 @@ export default function InteractiveVillageMap({
                     x={data.x || 0}
                     y={data.y || 0}
                     text={data.text || ''}
+                    width={data.width || 180}
                     fill={data.fill || '#272727'}
                     fontSize={data.fontSize || 12}
-                    fontStyle="bold"
+                    fontFamily={data.fontFamily || 'Inter'}
+                    fontStyle={data.fontStyle || 'bold'}
+                    align={data.align || 'left'}
                   />
                 );
               })}
@@ -1164,7 +1246,9 @@ export default function InteractiveVillageMap({
             className="pointer-events-none absolute left-0 top-0 z-20 w-[calc(100%-28px)] max-w-[330px] overflow-hidden rounded-2xl border border-[#dbe4ee] bg-white text-[#272727] shadow-[0_18px_45px_rgba(15,23,42,0.22)] will-change-transform"
             style={{ transform: 'translate3d(18px, 18px, 0)' }}
           >
-            {hoverPreview.property ? (
+            {hoverPreview.amenity ? (
+              <AmenityTooltip amenity={hoverPreview.amenity} />
+            ) : hoverPreview.property ? (
               <div className="p-4">
                 <div className="mb-4 flex items-start justify-between gap-4">
                   <div>

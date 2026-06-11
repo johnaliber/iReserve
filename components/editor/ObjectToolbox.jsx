@@ -3,14 +3,10 @@
 import React from 'react';
 import { 
   MousePointer, 
-  MapPin, 
   Trees, 
   Layers, 
   Type, 
-  Eye, 
-  EyeOff, 
   Building,
-  Flag,
   Navigation,
   Compass,
   AlertTriangle,
@@ -19,8 +15,14 @@ import {
   Waves,
   Volume2
 } from 'lucide-react';
+import { AMENITY_SHAPES } from '@/lib/blueprints/amenities';
 
-export default function ObjectToolbox({ activeTool, setActiveTool }) {
+export default function ObjectToolbox({
+  activeTool,
+  setActiveTool,
+  amenityShapeMode = 'icon',
+  setAmenityShapeMode
+}) {
   const tools = [
     { id: 'select', name: 'Select / Move', icon: MousePointer, category: 'general', shortcut: 'S / 1' },
     { id: 'multi_select', name: 'Multi-Select', icon: MultiSelectIcon, category: 'general', shortcut: 'M' },
@@ -68,11 +70,11 @@ export default function ObjectToolbox({ activeTool, setActiveTool }) {
   const renderSection = (categoryName, categoryId) => {
     const filteredTools = tools.filter(t => t.category === categoryId);
     return (
-      <div className="space-y-1">
-        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block px-2 mb-1.5">
+      <div className="space-y-2">
+        <span className="block px-1 text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-600">
           {categoryName}
         </span>
-        <div className="grid grid-cols-2 gap-1">
+        <div className="grid grid-cols-2 gap-1.5">
           {filteredTools.map((tool) => {
             const Icon = tool.icon;
             const isActive = activeTool === tool.id;
@@ -81,14 +83,14 @@ export default function ObjectToolbox({ activeTool, setActiveTool }) {
                 key={tool.id}
                 onClick={() => setActiveTool(tool.id)}
                 title={`${tool.name} (Shortcut: ${tool.shortcut})`}
-                className={`flex flex-col items-center justify-center p-2 rounded-lg border text-[9px] font-semibold transition group outline-none cursor-pointer ${
+                className={`group flex min-h-14 flex-col items-center justify-center rounded-lg border px-1.5 py-2 text-[10px] font-semibold outline-none transition ${
                   isActive
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                    : 'bg-slate-950/40 border-slate-900 text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800 shadow-sm'
+                    : 'border-transparent bg-slate-50 text-slate-700 hover:border-slate-200 hover:bg-white hover:shadow-sm'
                 }`}
               >
-                <Icon className={`w-4 h-4 mb-1 group-hover:scale-110 transition-transform ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
-                <span className="truncate w-full text-center">{tool.name.split(' ')[0]}</span>
+                <Icon className={`mb-1 h-4 w-4 transition-transform group-hover:scale-105 ${isActive ? 'text-emerald-700' : 'text-slate-600'}`} />
+                <span className="w-full truncate text-center">{tool.name}</span>
               </button>
             );
           })}
@@ -98,15 +100,32 @@ export default function ObjectToolbox({ activeTool, setActiveTool }) {
   };
 
   return (
-    <aside className="w-48 flex-shrink-0 bg-slate-900 border-r border-slate-800/80 p-3 flex flex-col gap-4 overflow-y-auto select-none">
+    <aside className="editor-toolbox-scroll flex h-full min-h-0 w-44 flex-shrink-0 select-none flex-col gap-3 overflow-x-hidden overflow-y-auto bg-white p-3 pt-12">
       {renderSection('Controls', 'general')}
-      <hr className="border-slate-800/60" />
+      <hr className="border-slate-200" />
       {renderSection('Subdivision Roads', 'roads')}
-      <hr className="border-slate-800/60" />
+      <hr className="border-slate-200" />
       {renderSection('Property Lots', 'lots')}
-      <hr className="border-slate-800/60" />
+      <hr className="border-slate-200" />
+      <div className="space-y-2">
+        <label className="block px-1 text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-600">
+          Amenity Drawing Mode
+        </label>
+        <select
+          value={amenityShapeMode}
+          onChange={(event) => setAmenityShapeMode?.(event.target.value)}
+          className="h-9 w-full rounded-lg border border-[#cbd5e1] bg-white px-2 text-[11px] font-semibold text-[#334155] outline-none focus:border-emerald-500"
+        >
+          {AMENITY_SHAPES.map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+        <p className="px-1 text-[10px] leading-4 text-[#64748b]">
+          Choose a shape, then select an amenity below.
+        </p>
+      </div>
       {renderSection('Amenities', 'amenities')}
-      <hr className="border-slate-800/60" />
+      <hr className="border-slate-200" />
       {renderSection('Hazards & Zones', 'zones')}
     </aside>
   );
