@@ -18,13 +18,13 @@ export default function CustomerShell({ children }) {
   };
 
   return (
-    <div className="customer-accessible dashboard-compact relative flex min-h-screen flex-col overflow-hidden bg-[#f8fafc] text-[#272727]">
+    <div className="customer-accessible dashboard-compact relative flex min-h-dvh flex-col overflow-hidden bg-[#f8fafc] text-[#272727]">
       <Navbar
         toggleSidebar={toggleSidebar}
         isSidebarOpen={isSidebarOpen}
         isSidebarCollapsed={isSidebarCollapsed}
       />
-      <div className="relative z-10 flex flex-1 overflow-visible">
+      <div className="relative flex flex-1 overflow-visible">
         <AdminSidebar
           isOpen={isSidebarOpen}
           isCollapsed={isSidebarCollapsed}

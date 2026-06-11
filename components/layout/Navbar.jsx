@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { Bell, Menu, X } from 'lucide-react';
 import Link from 'next/link';
 
-export default function Navbar({ toggleSidebar, isSidebarOpen, isSidebarCollapsed = false }) {
+export default function Navbar({ toggleSidebar, isSidebarOpen }) {
   const supabase = createClient();
 
   const [user, setUser] = useState(null);
@@ -65,11 +65,7 @@ export default function Navbar({ toggleSidebar, isSidebarOpen, isSidebarCollapse
 
   return (
     <>
-    <header className={`fixed left-0 top-0 z-40 flex h-[58px] w-full items-center justify-between border-b border-[#e3e9e6] bg-white/95 px-3.5 py-2.5 backdrop-blur transition-[left,width] duration-300 ${
-      isSidebarCollapsed
-        ? 'md:left-[72px] md:w-[calc(100%-72px)]'
-        : 'md:left-[260px] md:w-[calc(100%-260px)]'
-    }`}>
+    <header className="fixed inset-x-0 top-0 z-40 flex h-[58px] w-full items-center justify-between border-b border-[#e3e9e6] bg-white/95 px-3.5 py-2.5 backdrop-blur">
       <div className="flex items-center gap-3">
         {toggleSidebar && (
           <button
