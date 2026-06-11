@@ -48,6 +48,8 @@ export async function POST(request) {
     return json(403, { error: 'You can only pay your own account ledger.' });
   }
 
+  const isFullPayment = plan.payment_type === 'full_payment';
+
   const { data: documents } = await admin
     .from('documents')
     .select('status')
@@ -58,7 +60,7 @@ export async function POST(request) {
   }
 
   let schedule = null;
-  if (paymentScheduleId) {
+  if (paymentScheduleId && !isFullPayment) {
     const { data: scheduleRow, error: scheduleError } = await admin
       .from('payment_schedule')
       .select('*')
@@ -71,31 +73,45 @@ export async function POST(request) {
     }
 
     schedule = scheduleRow;
-  } else {
+  } else if (!isFullPayment) {
     schedule = await createFallbackPaymentSchedule(admin, paymentPlanId);
   }
 
-  if (schedule.status === 'paid' || Number(schedule.remaining_due || 0) <= 0) {
+  if (isFullPayment && Number(plan.remaining_balance || 0) <= 0) {
+    return json(400, { error: 'This account is already fully paid.' });
+  }
+
+  if (schedule && (schedule.status === 'paid' || Number(schedule.remaining_due || 0) <= 0)) {
     return json(400, { error: 'This due is already paid.' });
   }
 
-  const { data: pendingPayment } = await admin
+  let pendingPaymentQuery = admin
     .from('payments')
     .select('id')
-    .eq('payment_schedule_id', schedule.id)
+    .eq('payment_plan_id', paymentPlanId)
     .eq('customer_id', user.id)
-    .eq('payment_status', 'pending_verification')
-    .maybeSingle();
+    .eq('payment_status', 'pending_verification');
+
+  pendingPaymentQuery = isFullPayment
+    ? pendingPaymentQuery.eq('payment_purpose', 'full_payment')
+    : pendingPaymentQuery.eq('payment_schedule_id', schedule.id);
+
+  const { data: pendingPayment } = await pendingPaymentQuery.maybeSingle();
 
   if (pendingPayment) {
-    return json(409, { error: 'This due already has a payment waiting for accounting verification.' });
+    return json(409, {
+      error: isFullPayment
+        ? 'Your full-balance payment is already waiting for accounting verification.'
+        : 'This due already has a payment waiting for accounting verification.'
+    });
   }
 
+  const paymentPurpose = isFullPayment ? 'full_payment' : 'monthly_installment';
   const { maximumPayableAmount, amount: acceptedAmount } = await validatePaymentAmount(admin, {
     paymentPlanId,
-    paymentScheduleId: schedule.id,
-    submittedAmount: amount || schedule.remaining_due,
-    paymentPurpose: 'monthly_installment'
+    paymentScheduleId: schedule?.id || null,
+    submittedAmount: amount || (isFullPayment ? plan.remaining_balance : schedule.remaining_due),
+    paymentPurpose
   });
 
   const { data: payment, error: paymentError } = await admin
@@ -103,13 +119,13 @@ export async function POST(request) {
     .insert({
       reservation_id: plan.reservation_id,
       payment_plan_id: paymentPlanId,
-      payment_schedule_id: schedule.id,
+      payment_schedule_id: schedule?.id || null,
       village_id: plan.village_id,
       customer_id: user.id,
       amount: acceptedAmount,
       payment_method: paymentMethod,
       payment_status: 'pending_verification',
-      payment_purpose: 'monthly_installment',
+      payment_purpose: paymentPurpose,
       reference_number: referenceNumber || fallbackRef(),
       proof_url: 'QR payment submitted by customer',
       maximum_payable_amount: maximumPayableAmount,

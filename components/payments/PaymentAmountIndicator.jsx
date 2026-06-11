@@ -44,7 +44,16 @@ export default function PaymentAmountIndicator({
   overdueCount = 0,
   nextDueDate
 }) {
-  const [label, className, message] = styles[indicator] || styles.not_paid;
+  const hasOutstandingFullBalance = paymentType === 'full_payment'
+    && Number(amountPaid || 0) > 0
+    && Number(remainingBalance || 0) > 0;
+  const [label, className, message] = hasOutstandingFullBalance
+    ? [
+        'Full Balance Due',
+        'bg-amber-50 text-amber-800 border-amber-200',
+        'Your reservation fee is recorded. Pay the remaining full balance to complete this purchase.'
+      ]
+    : styles[indicator] || styles.not_paid;
   const showInitial = ['partial_payment', 'installment'].includes(paymentType);
 
   return (

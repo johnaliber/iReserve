@@ -95,9 +95,9 @@ const customerNav = [
   { title: 'My Reservations', href: '/customer/reservations', icon: CalendarCheck },
   { title: 'My Payments', href: '/customer/payments', icon: CreditCard },
   { title: 'My Documents', href: '/customer/documents', icon: Shield },
-  { title: 'Site Viewing', href: '/customer/site-viewing', icon: CalendarCheck },
-  { title: 'Notifications', href: '/customer/notifications', icon: Bell },
-  { title: 'Account', href: '/customer/account', icon: UserRound }
+  { title: 'Site Viewing', href: '/customer/site-viewing', icon: CalendarCheck }
+  // { title: 'Notifications', href: '/customer/notifications', icon: Bell },
+  // { title: 'Account', href: '/customer/account', icon: UserRound }
 ];
 
 const navByRole = {

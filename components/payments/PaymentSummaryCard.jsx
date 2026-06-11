@@ -6,10 +6,13 @@ import PaymentAmountIndicator from './PaymentAmountIndicator';
 
 export default function PaymentSummaryCard({ plan }) {
   if (!plan) return null;
-  const termMonths = Math.max(1, Number(plan.installment_term_months || 6));
-  const monthlyPayment = Number(plan.monthly_payment || 0) > 0
-    ? Number(plan.monthly_payment)
-    : Number(plan.remaining_balance || 0) / termMonths;
+  const isFullPayment = plan.payment_type === 'full_payment';
+  const termMonths = isFullPayment ? 0 : Math.max(1, Number(plan.installment_term_months || 6));
+  const monthlyPayment = isFullPayment
+    ? 0
+    : Number(plan.monthly_payment || 0) > 0
+      ? Number(plan.monthly_payment)
+      : Number(plan.remaining_balance || 0) / termMonths;
   const totalPaymentDue = Number(plan.amount_paid || 0) + Number(plan.remaining_balance || 0);
   const requiredDownpayment = Number(plan.downpayment_amount || 0);
   const remainingDownpayment = Math.max(0, requiredDownpayment - Number(plan.reservation_fee || 0));
@@ -29,14 +32,20 @@ export default function PaymentSummaryCard({ plan }) {
             <div><p className="text-[#64748b]">Remaining Downpayment</p><p className="font-extrabold text-[#272727]">{formatPeso(remainingDownpayment)}</p></div>
           </>
         )}
-        {Number(plan.interest_rate || 0) > 0 && (
+        {!isFullPayment && Number(plan.interest_rate || 0) > 0 && (
           <div><p className="text-[#64748b]">Total Payable With Interest</p><p className="font-extrabold text-[#272727]">{formatPeso(totalPaymentDue)}</p></div>
         )}
         <div><p className="text-[#64748b]">Total Initial Payment</p><p className="font-extrabold text-[#272727]">{formatPeso(plan.initial_amount_due)}</p></div>
         <div><p className="text-[#64748b]">Amount Paid</p><p className="font-extrabold text-[#272727]">{formatPeso(plan.amount_paid)}</p></div>
         <div><p className="text-[#64748b]">Remaining Balance</p><p className="font-extrabold text-[#272727]">{formatPeso(plan.remaining_balance)}</p></div>
-        {monthlyPayment > 0 && <div><p className="text-[#64748b]">Monthly Payment</p><p className="font-extrabold text-[#272727]">{formatPeso(monthlyPayment)}</p></div>}
-        {termMonths > 0 && <div><p className="text-[#64748b]">Term</p><p className="font-extrabold text-[#272727]">{termMonths} months</p></div>}
+        <div>
+          <p className="text-[#64748b]">Monthly Payment</p>
+          <p className="font-extrabold text-[#272727]">{isFullPayment ? 'Not applicable' : formatPeso(monthlyPayment)}</p>
+        </div>
+        <div>
+          <p className="text-[#64748b]">Term</p>
+          <p className="font-extrabold text-[#272727]">{isFullPayment ? 'Not applicable' : `${termMonths} months`}</p>
+        </div>
       </div>
       <PaymentAmountIndicator
         paymentType={plan.payment_type}

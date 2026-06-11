@@ -42,10 +42,12 @@ function getPlanSchedule(plan) {
 }
 
 function getLedgerTermMonths(plan) {
+  if (plan?.payment_type === 'full_payment') return 0;
   return Number(plan.installment_term_months || plan.reservations?.installment_term_months || 6);
 }
 
 function getLedgerMonthlyPayment(plan) {
+  if (plan?.payment_type === 'full_payment') return 0;
   if (Number(plan.monthly_payment || 0) > 0) return Number(plan.monthly_payment);
   const remaining = Number(plan.remaining_balance || 0);
   const term = Math.max(1, getLedgerTermMonths(plan));
@@ -65,10 +67,11 @@ function getFallbackNextDue(plan, schedule = []) {
 function getLedgerStatus(plan) {
   const today = new Date().toISOString().slice(0, 10);
   const schedule = getPlanSchedule(plan);
+  const usesSchedule = plan?.payment_type !== 'full_payment';
   const openRows = schedule.filter((row) => ['unpaid', 'partially_paid', 'overdue'].includes(row.status));
   const overdueRows = openRows.filter((row) => row.due_date < today);
   const scheduledNextDue = [...openRows].sort((a, b) => new Date(a.due_date) - new Date(b.due_date))[0] || null;
-  const fallbackNextDue = Number(plan.remaining_balance || 0) > 0
+  const fallbackNextDue = usesSchedule && Number(plan.remaining_balance || 0) > 0
     ? {
         due_date: getFallbackNextDue(plan, schedule),
         remaining_due: getLedgerMonthlyPayment(plan),
@@ -109,6 +112,18 @@ function getLedgerStatus(plan) {
       overdueRows,
       messageType: 'payment_reminder',
       canNotify: false
+    };
+  }
+
+  if (plan.payment_type === 'full_payment' && Number(plan.remaining_balance || 0) > 0) {
+    return {
+      label: 'Balance Due',
+      tone: 'border-[#fde7b2] bg-[#fffbeb] text-[#9a6700]',
+      nextDue: null,
+      overdueRows,
+      messageType: 'full_balance_due',
+      canNotify: true,
+      fullBalanceDue: Number(plan.remaining_balance || 0)
     };
   }
 
@@ -202,6 +217,16 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
     setLoading(true);
     setScopeError('');
     try {
+      const reconcileResponse = await fetch('/api/accounting/customer-accounts/reconcile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ villageId })
+      });
+      if (!reconcileResponse.ok) {
+        const reconcilePayload = await reconcileResponse.json().catch(() => ({}));
+        console.warn('Customer ledger reconciliation skipped:', reconcilePayload.error || reconcileResponse.statusText);
+      }
+
       const paymentsQuery = supabase
         .from('payments')
         .select('*, payment_plans(*), reservations(*, properties(*, villages(*)), profiles(full_name))')
@@ -304,7 +329,11 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
 
   const openCashPayment = (plan) => {
     const status = getLedgerStatus(plan);
-    const amount = status.nextDue ? Number(status.nextDue.remaining_due || status.nextDue.amount_due || 0) : getLedgerMonthlyPayment(plan);
+    const amount = plan.payment_type === 'full_payment'
+      ? Number(plan.remaining_balance || 0)
+      : status.nextDue
+        ? Number(status.nextDue.remaining_due || status.nextDue.amount_due || 0)
+        : getLedgerMonthlyPayment(plan);
     setCashPlan({ plan, status });
     setCashAmount(amount ? String(amount) : '');
     setCashReceipt('');
@@ -1097,6 +1126,9 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
                   const overdueAmount = status.overdueRows.reduce((sum, row) => sum + Number(row.remaining_due || row.amount_due || 0), 0);
                   const nextDueAmount = status.nextDue ? Number(status.nextDue.remaining_due || status.nextDue.amount_due || 0) : 0;
                   const monthlyPayment = getLedgerMonthlyPayment(plan);
+                  const canRecordPayment = plan.payment_type === 'full_payment'
+                    ? Number(plan.remaining_balance || 0) > 0
+                    : Boolean(status.nextDue && monthlyPayment > 0);
 
                   return (
                     <tr key={plan.id} className="transition-colors hover:bg-[#fafcfb]">
@@ -1120,8 +1152,17 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
                         )}
                       </td>
                       <td className="py-3.5 px-2">
-                        <span className="block">{status.nextDue ? formatDate(status.nextDue.due_date) : 'No due scheduled'}</span>
+                        <span className="block">
+                          {plan.payment_type === 'full_payment' && Number(plan.remaining_balance || 0) > 0
+                            ? 'Full balance due'
+                            : status.nextDue
+                              ? formatDate(status.nextDue.due_date)
+                              : 'No due scheduled'}
+                        </span>
                         {status.nextDue && <span className="block text-[10px] text-[#7c8983]">{formatPeso(nextDueAmount)}</span>}
+                        {plan.payment_type === 'full_payment' && Number(plan.remaining_balance || 0) > 0 && (
+                          <span className="block text-[10px] text-[#7c8983]">{formatPeso(plan.remaining_balance)}</span>
+                        )}
                       </td>
                       <td className="py-3.5 px-2">
                         {status.overdueRows.length > 0 ? (
@@ -1142,12 +1183,12 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
                         <div className="flex flex-wrap justify-end gap-2">
                         <button
                           type="button"
-                          disabled={!status.nextDue || monthlyPayment <= 0}
+                          disabled={!canRecordPayment}
                           onClick={() => openCashPayment(plan)}
                           className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[#d5ded9] bg-white px-3 text-[10px] font-extrabold text-[#405149] shadow-sm transition hover:border-[#aebdb6] hover:bg-[#f8faf9] disabled:cursor-not-allowed disabled:bg-[#f1f4f2] disabled:text-[#a5afa9] disabled:shadow-none"
                         >
                           <Coins className="w-3.5 h-3.5" />
-                          Record Cash
+                          {plan.payment_type === 'full_payment' ? 'Record Balance' : 'Record Cash'}
                         </button>
                         <button
                           type="button"
@@ -1199,8 +1240,14 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
                     <p className="mt-1 font-extrabold text-slate-900">{cashPlan.plan.reservations?.properties?.property_code || cashPlan.plan.reservations?.reservation_code}</p>
                   </div>
                   <div>
-                    <p className="font-bold uppercase tracking-wider text-slate-500">Next Due</p>
-                    <p className="mt-1 font-extrabold text-slate-900">{formatDate(cashPlan.status.nextDue?.due_date)}</p>
+                    <p className="font-bold uppercase tracking-wider text-slate-500">
+                      {cashPlan.plan.payment_type === 'full_payment' ? 'Payment Type' : 'Next Due'}
+                    </p>
+                    <p className="mt-1 font-extrabold text-slate-900">
+                      {cashPlan.plan.payment_type === 'full_payment'
+                        ? 'Remaining Full Balance'
+                        : formatDate(cashPlan.status.nextDue?.due_date)}
+                    </p>
                   </div>
                 </div>
 

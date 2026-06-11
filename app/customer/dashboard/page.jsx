@@ -32,10 +32,12 @@ import NextStepCard from '@/components/customer/NextStepCard';
 import FriendlyStatusBadge from '@/components/customer/FriendlyStatusBadge';
 
 function getPlanTerm(plan) {
+  if (plan?.payment_type === 'full_payment') return 0;
   return Math.max(1, Number(plan?.installment_term_months || 6));
 }
 
 function getPlanMonthlyPayment(plan) {
+  if (plan?.payment_type === 'full_payment') return 0;
   if (Number(plan?.monthly_payment || 0) > 0) return Number(plan.monthly_payment);
   const remaining = Number(plan?.remaining_balance || 0);
   return remaining > 0 ? remaining / getPlanTerm(plan) : 0;
@@ -43,6 +45,7 @@ function getPlanMonthlyPayment(plan) {
 
 function getCustomerSchedule(plan, reservation) {
   const rows = normalizeMonthlyScheduleRows(Array.isArray(plan?.payment_schedule) ? plan.payment_schedule : []);
+  if (plan?.payment_type === 'full_payment') return [];
   const hasOpenDue = rows.some((row) => ['unpaid', 'partially_paid', 'overdue'].includes(row.status));
   if (hasOpenDue || Number(plan?.remaining_balance || 0) <= 0) return rows;
 
@@ -172,7 +175,9 @@ export default function CustomerDashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paymentPlanId: selectedDue.plan.id,
-          paymentScheduleId: selectedDue.row.isFallback ? null : selectedDue.row.id,
+          paymentScheduleId: selectedDue.row.isFallback || selectedDue.row.isFullBalance
+            ? null
+            : selectedDue.row.id,
           amount: Number(selectedDue.row.remaining_due || selectedDue.row.amount_due || 0),
           paymentMethod,
           referenceNumber
@@ -266,6 +271,8 @@ export default function CustomerDashboardPage() {
                     const prop = res.properties || {};
                     const plan = Array.isArray(res.payment_plans) ? res.payment_plans[0] : res.payment_plans;
                     const schedule = getCustomerSchedule(plan, res);
+                    const fullBalanceDue = plan?.payment_type === 'full_payment'
+                      && Number(plan.remaining_balance || 0) > 0;
                     
                     return (
                       <div key={res.id} className="py-4 first:pt-0 last:pb-0 flex flex-col gap-4">
@@ -282,6 +289,22 @@ export default function CustomerDashboardPage() {
                           >
                             <TableProperties className="h-4 w-4" />
                             View Full Payment Schedule
+                          </button>
+                        )}
+                        {fullBalanceDue && (
+                          <button
+                            type="button"
+                            onClick={() => openNextPayment({
+                              id: `full-balance-${plan.id}`,
+                              amount_due: Number(plan.remaining_balance || 0),
+                              remaining_due: Number(plan.remaining_balance || 0),
+                              due_date: null,
+                              isFullBalance: true
+                            }, plan, res)}
+                            className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-extrabold text-white shadow-sm transition hover:bg-emerald-500 sm:w-auto"
+                          >
+                            <Coins className="h-4 w-4" />
+                            Pay Remaining Full Balance
                           </button>
                         )}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -419,7 +442,7 @@ export default function CustomerDashboardPage() {
               <div className="flex items-center justify-between border-b border-[#e2e8f0] px-5 py-4">
                 <div>
                   <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600">
-                    Next Monthly Payment
+                    {selectedDue.row.isFullBalance ? 'Remaining Full Balance' : 'Next Monthly Payment'}
                   </p>
                   <h2 className="text-lg font-extrabold text-[#272727]">
                     {formatPeso(selectedDue.row.remaining_due || selectedDue.row.amount_due)}
@@ -445,9 +468,13 @@ export default function CustomerDashboardPage() {
                       </p>
                     </div>
                     <div>
-                      <p className="text-xs font-bold uppercase tracking-wider text-[#64748b]">Due Date</p>
+                      <p className="text-xs font-bold uppercase tracking-wider text-[#64748b]">
+                        {selectedDue.row.isFullBalance ? 'Payment Type' : 'Due Date'}
+                      </p>
                       <p className="mt-1 font-extrabold text-[#272727]">
-                        {new Date(selectedDue.row.due_date).toLocaleDateString('en-PH')}
+                        {selectedDue.row.isFullBalance
+                          ? 'Full Payment'
+                          : new Date(selectedDue.row.due_date).toLocaleDateString('en-PH')}
                       </p>
                     </div>
                   </div>

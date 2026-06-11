@@ -64,6 +64,8 @@ export async function POST(request) {
     return json(403, { error: 'You do not have payment access to this village.' });
   }
 
+  const isFullPayment = plan.payment_type === 'full_payment';
+
   const { data: documents } = await admin
     .from('documents')
     .select('status')
@@ -74,7 +76,7 @@ export async function POST(request) {
   }
 
   let schedule = null;
-  if (paymentScheduleId) {
+  if (paymentScheduleId && !isFullPayment) {
     const { data: scheduleRow, error: scheduleError } = await admin
       .from('payment_schedule')
       .select('*')
@@ -84,7 +86,7 @@ export async function POST(request) {
 
     if (scheduleError || !scheduleRow) return json(404, { error: 'Payment due was not found.' });
     schedule = scheduleRow;
-  } else {
+  } else if (!isFullPayment) {
     const { data: openRows } = await admin
       .from('payment_schedule')
       .select('*')
@@ -96,15 +98,20 @@ export async function POST(request) {
     schedule = openRows?.[0] || await createFallbackPaymentSchedule(admin, paymentPlanId);
   }
 
-  if (schedule.status === 'paid' || Number(schedule.remaining_due || 0) <= 0) {
+  if (isFullPayment && Number(plan.remaining_balance || 0) <= 0) {
+    return json(400, { error: 'This account is already fully paid.' });
+  }
+
+  if (schedule && (schedule.status === 'paid' || Number(schedule.remaining_due || 0) <= 0)) {
     return json(400, { error: 'This due is already paid.' });
   }
 
+  const paymentPurpose = isFullPayment ? 'full_payment' : 'monthly_installment';
   const { maximumPayableAmount, amount: acceptedAmount } = await validatePaymentAmount(admin, {
     paymentPlanId,
-    paymentScheduleId: schedule.id,
-    submittedAmount: amount || schedule.remaining_due,
-    paymentPurpose: 'monthly_installment'
+    paymentScheduleId: schedule?.id || null,
+    submittedAmount: amount || (isFullPayment ? plan.remaining_balance : schedule.remaining_due),
+    paymentPurpose
   });
 
   const receiptNumber = officialReceiptNumber || fallbackReceipt();
@@ -113,13 +120,13 @@ export async function POST(request) {
     .insert({
       reservation_id: plan.reservation_id,
       payment_plan_id: paymentPlanId,
-      payment_schedule_id: schedule.id,
+      payment_schedule_id: schedule?.id || null,
       village_id: plan.village_id,
       customer_id: plan.customer_id || plan.reservations?.customer_id,
       amount: acceptedAmount,
       payment_method: 'cash',
       payment_status: 'verified',
-      payment_purpose: 'monthly_installment',
+      payment_purpose: paymentPurpose,
       reference_number: receiptNumber,
       official_receipt_number: receiptNumber,
       proof_url: 'Cash payment recorded by accounting',
@@ -138,25 +145,27 @@ export async function POST(request) {
 
   if (paymentError) return json(400, { error: paymentError.message });
 
-  const amountPaid = roundMoney(Number(schedule.amount_paid || 0) + Number(acceptedAmount || 0));
-  const remainingDue = roundMoney(Math.max(0, Number(schedule.amount_due || 0) - amountPaid));
-  const { data: updatedSchedule, error: scheduleUpdateError } = await admin
-    .from('payment_schedule')
-    .update({
-      amount_paid: amountPaid,
-      remaining_due: remainingDue,
-      status: remainingDue <= 0 ? 'paid' : 'partially_paid',
-      paid_at: remainingDue <= 0 ? new Date().toISOString() : null,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', schedule.id)
-    .select()
-    .single();
+  if (schedule) {
+    const amountPaid = roundMoney(Number(schedule.amount_paid || 0) + Number(acceptedAmount || 0));
+    const remainingDue = roundMoney(Math.max(0, Number(schedule.amount_due || 0) - amountPaid));
+    const { data: updatedSchedule, error: scheduleUpdateError } = await admin
+      .from('payment_schedule')
+      .update({
+        amount_paid: amountPaid,
+        remaining_due: remainingDue,
+        status: remainingDue <= 0 ? 'paid' : 'partially_paid',
+        paid_at: remainingDue <= 0 ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', schedule.id)
+      .select()
+      .single();
 
-  if (scheduleUpdateError) return json(400, { error: scheduleUpdateError.message });
+    if (scheduleUpdateError) return json(400, { error: scheduleUpdateError.message });
 
-  if (updatedSchedule?.status === 'paid') {
-    await ensureNextPaymentSchedule(admin, paymentPlanId, updatedSchedule);
+    if (updatedSchedule?.status === 'paid') {
+      await ensureNextPaymentSchedule(admin, paymentPlanId, updatedSchedule);
+    }
   }
   const updatedPlan = await recalculatePaymentIndicators(admin, paymentPlanId);
 
@@ -169,7 +178,12 @@ export async function POST(request) {
     entityType: 'payment',
     entityId: payment.id,
     description: `Recorded a manual cash payment for ${plan.reservations?.reservation_code || plan.reservation_id}.`,
-    metadata: { payment_plan_id: paymentPlanId, payment_schedule_id: schedule.id, receipt_number: receiptNumber }
+    metadata: {
+      payment_plan_id: paymentPlanId,
+      payment_schedule_id: schedule?.id || null,
+      payment_purpose: paymentPurpose,
+      receipt_number: receiptNumber
+    }
   });
 
   const customerId = plan.customer_id || plan.reservations?.customer_id;

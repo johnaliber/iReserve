@@ -20,7 +20,12 @@ import Navbar from '@/components/layout/Navbar';
 import PaymentTypeSelector from '@/components/payments/PaymentTypeSelector';
 import PaymentCalculator from '@/components/payments/PaymentCalculator';
 import PaymentQr, { makePaymentCode } from '@/components/payments/PaymentQr';
-import { calculatePaymentPlan, formatPeso, getInterestRateForTerm } from '@/lib/payments/paymentMath';
+import {
+  calculatePaymentPlan,
+  formatPeso,
+  getAmountDueForReservationStart,
+  getInterestRateForTerm
+} from '@/lib/payments/paymentMath';
 import ConfirmActionDialog from '@/components/shared/ConfirmActionDialog';
 import ReservationProgressSteps from '@/components/customer/ReservationProgressSteps';
 import DelayedLoadingState from '@/components/shared/DelayedLoadingState';
@@ -56,6 +61,7 @@ export default function ReservePropertyPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [isStaff, setIsStaff] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [confirmReservation, setConfirmReservation] = useState(false);
 
   const fetchProperty = useCallback(async () => {
@@ -79,6 +85,7 @@ export default function ReservePropertyPage() {
         
         // Pre-fill user profile fields if logged in
         const { data: { user } } = await supabase.auth.getUser();
+        setIsAuthenticated(Boolean(user));
         if (user) {
           setEmail(user.email);
           const { data: profile } = await supabase
@@ -111,6 +118,7 @@ export default function ReservePropertyPage() {
         
         // Also check role for fallback specs
         const { data: { user } } = await supabase.auth.getUser();
+        setIsAuthenticated(Boolean(user));
         if (user) {
           const { data: profile } = await supabase
             .from('profiles')
@@ -198,12 +206,23 @@ export default function ReservePropertyPage() {
         installmentTermMonths,
         interestRate: getInterestRateForTerm(property?.interest_rate, installmentTermMonths / 12)
       });
-      const submittedAmount = Number(paymentAmount || planPreview.initialAmountDue);
-      if (submittedAmount < planPreview.initialAmountDue) {
-        throw new Error(`Please pay the full initial amount due: ${formatPeso(planPreview.initialAmountDue)}.`);
+      const amountDueToday = getAmountDueForReservationStart({
+        isAuthenticated,
+        propertyPrice: property?.price || 0,
+        reservationFee: property?.reservation_fee || 0,
+        paymentType,
+        requiredDownpayment: planPreview.requiredDownpayment,
+        remainingDownpayment: planPreview.remainingDownpayment,
+        fullPaymentAmount: planPreview.totalContractPrice
+      });
+      const submittedAmount = Number(paymentAmount || amountDueToday);
+      if (submittedAmount < amountDueToday) {
+        throw new Error(`Please pay the full amount due today: ${formatPeso(amountDueToday)}.`);
       }
-      if (submittedAmount > planPreview.initialAmountDue) {
-        throw new Error(`Payment amount cannot exceed ${formatPeso(planPreview.initialAmountDue)}.`);
+      if (submittedAmount > amountDueToday) {
+        throw new Error(isAuthenticated
+          ? `Payment amount cannot exceed ${formatPeso(amountDueToday)}.`
+          : 'Please create an account first before paying more than the reservation fee.');
       }
 
       const formData = new FormData();
@@ -231,7 +250,11 @@ export default function ReservePropertyPage() {
         throw new Error(payload.error || 'Reservation could not be completed.');
       }
 
-      router.push(`/reserve/success?reservation_code=${payload.reservationCode}&email=${encodeURIComponent(payload.email)}`);
+      if (payload.isGuest) {
+        router.push(`/auth/register?email=${encodeURIComponent(payload.email)}&reservation_code=${encodeURIComponent(payload.reservationCode)}`);
+      } else {
+        router.push(`/reserve/success?reservation_code=${payload.reservationCode}&email=${encodeURIComponent(payload.email)}`);
+      }
     } catch (err) {
       console.error(err);
       setError(err.message || 'An unexpected error occurred during reservation. Please try again.');
@@ -252,11 +275,20 @@ export default function ReservePropertyPage() {
     installmentTermMonths,
     interestRate: getInterestRateForTerm(property?.interest_rate, installmentTermMonths / 12)
   });
+  const amountDueToday = getAmountDueForReservationStart({
+    isAuthenticated,
+    propertyPrice: property?.price || 0,
+    reservationFee: property?.reservation_fee || 0,
+    paymentType,
+    requiredDownpayment: checkoutPlan.requiredDownpayment,
+    remainingDownpayment: checkoutPlan.remainingDownpayment,
+    fullPaymentAmount: checkoutPlan.totalContractPrice
+  });
   const paymentPayload = [
     'iReserve',
     `block-${property?.block_number || 'unknown'}-lot-${property?.lot_number || 'unknown'}`,
     paymentMethod,
-    checkoutPlan.initialAmountDue,
+    amountDueToday,
     email || 'guest'
   ].join('|');
   const canSubmitReservation = Boolean(paymentStarted && receiptRef.trim() && agreed && validIdFile && incomeProofFile);
@@ -264,7 +296,7 @@ export default function ReservePropertyPage() {
   const handlePayNow = () => {
     const code = makePaymentCode(paymentPayload);
     setPaymentCode(code);
-    setPaymentAmount(String(checkoutPlan.initialAmountDue));
+    setPaymentAmount(String(amountDueToday));
     setPaymentStarted(true);
     setError('');
   };
@@ -407,6 +439,15 @@ export default function ReservePropertyPage() {
                   }}
                 />
 
+                {!isAuthenticated && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                    <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-800">Reservation fee only</p>
+                    <p className="mt-1 text-sm font-semibold leading-6 text-emerald-900">
+                      You only need to pay the reservation fee today. Your selected payment option will be saved and applied after you create your account.
+                    </p>
+                  </div>
+                )}
+
                 {['partial_payment', 'installment'].includes(paymentType) && (
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -463,6 +504,7 @@ export default function ReservePropertyPage() {
                   downpaymentPercentage={downpaymentPercentage}
                   installmentTermMonths={installmentTermMonths}
                   interestRate={getInterestRateForTerm(property?.interest_rate, installmentTermMonths / 12)}
+                  reservationFeeOnly={!isAuthenticated}
                 />
 
                 <section className="rounded-2xl border border-[#e2e8f0] bg-white p-4 shadow-sm">
@@ -470,13 +512,17 @@ export default function ReservePropertyPage() {
                     <div>
                       <h3 className="flex items-center gap-1.5 text-sm font-extrabold text-[#272727]">
                         <Wallet className="h-4.5 w-4.5 text-emerald-500" />
-                        Step 3: Pay and Enter Receipt Details
+                        {isAuthenticated ? 'Step 3: Pay and Enter Receipt Details' : 'Step 3: Pay Reservation Fee'}
                       </h3>
-                      <p className="mt-1 text-xs text-[#64748b]">Generate a QR for the exact amount due, then enter the transaction reference.</p>
+                      <p className="mt-1 text-xs text-[#64748b]">
+                        {isAuthenticated
+                          ? 'Generate a QR for the exact amount due, then enter the transaction reference.'
+                          : 'Pay the reservation fee to temporarily hold this lot. Your selected payment option will be applied after you create your account.'}
+                      </p>
                     </div>
                     <div className="rounded-lg bg-emerald-50 px-3 py-2 text-left md:text-right">
-                      <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">Amount Due</p>
-                      <p className="text-lg font-extrabold text-emerald-700">{formatPeso(checkoutPlan.initialAmountDue)}</p>
+                      <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">Amount Due Today</p>
+                      <p className="text-lg font-extrabold text-emerald-700">{formatPeso(amountDueToday)}</p>
                     </div>
                   </div>
 
@@ -531,7 +577,7 @@ export default function ReservePropertyPage() {
                             required
                             readOnly
                             value={paymentAmount}
-                            placeholder={formatPeso(checkoutPlan.initialAmountDue)}
+                            placeholder={formatPeso(amountDueToday)}
                             className="w-full rounded-xl border border-[#dbe4ee] bg-[#f8fafc] px-3 py-2.5 text-sm font-bold text-[#272727] outline-none"
                           />
                         </div>
@@ -570,7 +616,12 @@ export default function ReservePropertyPage() {
                   {paymentStarted && (
                     <p className="mt-3 flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
                       <CheckCircle2 className="h-4 w-4" />
-                      QR generated for {formatPeso(checkoutPlan.initialAmountDue)} via {paymentMethod.replace('_', ' ')}. Enter the transaction reference before confirming.
+                      QR generated for {formatPeso(amountDueToday)} via {paymentMethod.replace('_', ' ')}. Enter the transaction reference before confirming.
+                    </p>
+                  )}
+                  {!isAuthenticated && (
+                    <p className="mt-3 text-xs font-semibold leading-5 text-[#475569]">
+                      The reservation fee is part of the property payment and will be deducted from your remaining balance.
                     </p>
                   )}
                 </section>

@@ -56,12 +56,17 @@ export async function POST(request) {
     ? `Block ${plan.reservations.properties.block_number || '-'}, Lot ${plan.reservations.properties.lot_number || '-'}`
     : 'your reservation';
   const amount = formatPeso(plan.remaining_balance || 0);
+  const isFullBalanceReminder = messageType === 'full_balance_due';
   const title = messageType === 'overdue'
     ? 'Payment Overdue'
-    : 'Upcoming Payment Reminder';
+    : isFullBalanceReminder
+      ? 'Full Payment Balance Due'
+      : 'Upcoming Payment Reminder';
   const message = messageType === 'overdue'
     ? `Your account for ${propertyLabel} has overdue payment/s. Please settle your remaining balance of ${amount} as soon as possible.`
-    : `Your account for ${propertyLabel} has an upcoming payment due. Please prepare your balance payment. Remaining balance: ${amount}.`;
+    : isFullBalanceReminder
+      ? `Your reservation fee for ${propertyLabel} is recorded. Your remaining full-payment balance is ${amount}.`
+      : `Your account for ${propertyLabel} has an upcoming payment due. Please prepare your balance payment. Remaining balance: ${amount}.`;
 
   const { error: notificationError } = await admin.from('notifications').insert({
     user_id: plan.customer_id,

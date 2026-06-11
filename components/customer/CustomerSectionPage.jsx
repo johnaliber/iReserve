@@ -627,6 +627,7 @@ export default function CustomerSectionPage({ section }) {
         const interestRate = plan?.interest_rate ?? selectedItem.properties?.interest_rate ?? 0;
         const monthlyPayment = plan?.monthly_payment ?? selectedItem.monthly_payment;
         const termMonths = plan?.installment_term_months ?? selectedItem.installment_term_months;
+        const isFullPayment = selectedItem.payment_type === 'full_payment';
         return (
           <DetailModal title="Reservation Details" eyebrow={selectedItem.reservation_code} onClose={() => setSelectedItem(null)}>
             <DetailGrid rows={[
@@ -638,9 +639,9 @@ export default function CustomerSectionPage({ section }) {
               ['Expires On', formatDateTime(selectedItem.expires_at)],
               ['Payment Type', selectedItem.payment_type?.replaceAll('_', ' ') || 'Not set'],
               ['Contract Price', formatMoney(selectedItem.total_contract_price || selectedItem.properties?.price)],
-              ['Interest Rate', `${Number(interestRate)}% per annum`],
-              ['Monthly Payment', monthlyPayment ? formatMoney(monthlyPayment) : 'N/A'],
-              ['Installment Term', termMonths ? `${termMonths} months (${Math.round(termMonths / 12)} years)` : 'N/A'],
+              ['Interest Rate', isFullPayment ? 'Not applicable' : `${Number(interestRate)}% per annum`],
+              ['Monthly Payment', isFullPayment ? 'Not applicable' : (monthlyPayment ? formatMoney(monthlyPayment) : 'N/A')],
+              ['Installment Term', isFullPayment ? 'Not applicable' : (termMonths ? `${termMonths} months (${Math.round(termMonths / 12)} years)` : 'N/A')],
               ['Amount Paid', formatMoney(selectedItem.amount_paid)],
               ['Remaining Balance', formatMoney(selectedItem.remaining_balance)]
             ]} />

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { calculatePaymentPlan, formatPeso } from '@/lib/payments/paymentMath';
+import { PAYMENT_TYPES, calculatePaymentPlan, formatPeso } from '@/lib/payments/paymentMath';
 
 export default function PaymentCalculator({
   propertyPrice,
@@ -10,7 +10,8 @@ export default function PaymentCalculator({
   downpaymentAmount,
   downpaymentPercentage,
   installmentTermMonths,
-  interestRate = 0
+  interestRate = 0,
+  reservationFeeOnly = false
 }) {
   const plan = calculatePaymentPlan({
     propertyPrice,
@@ -23,6 +24,57 @@ export default function PaymentCalculator({
   });
   const remainingAfterInitial = plan.principalBalance;
   const downpaymentFormula = `${formatPeso(plan.totalContractPrice)} x ${plan.downpaymentPercentage || 0}%`;
+
+  if (reservationFeeOnly) {
+    return (
+      <div className="rounded-xl border border-[#d7e7df] bg-white p-5 shadow-sm">
+        <div className="mb-4">
+          <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">Reservation fee only</p>
+          <h3 className="mt-1 text-sm font-extrabold text-[#272727]">Payment Breakdown</h3>
+          <p className="mt-1 text-xs leading-relaxed text-[#475569]">
+            You only need to pay the reservation fee today. Your selected payment option will be saved and applied after you create your account.
+          </p>
+        </div>
+
+        <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+          <div className="rounded-lg border border-[#e2e8f0] bg-[#f8fafc] p-3">
+            <dt className="text-[10px] font-extrabold uppercase tracking-wider text-[#64748b]">Total Property Price</dt>
+            <dd className="mt-1 font-extrabold text-[#272727]">{formatPeso(plan.totalContractPrice)}</dd>
+          </div>
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+            <dt className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">Reservation Fee Due Today</dt>
+            <dd className="mt-1 font-extrabold text-emerald-800">{formatPeso(plan.reservationFee)}</dd>
+          </div>
+          <div className="rounded-lg border border-[#e2e8f0] bg-[#f8fafc] p-3">
+            <dt className="text-[10px] font-extrabold uppercase tracking-wider text-[#64748b]">Selected Payment Option</dt>
+            <dd className="mt-1 font-extrabold text-[#272727]">{PAYMENT_TYPES[plan.paymentType]}</dd>
+          </div>
+          {plan.paymentType !== 'full_payment' && (
+            <div className="rounded-lg border border-[#e2e8f0] bg-[#f8fafc] p-3">
+              <dt className="text-[10px] font-extrabold uppercase tracking-wider text-[#64748b]">Downpayment Percentage</dt>
+              <dd className="mt-1 font-extrabold text-[#272727]">{plan.downpaymentPercentage}%</dd>
+            </div>
+          )}
+          {plan.paymentType === 'installment' && (
+            <div className="rounded-lg border border-[#e2e8f0] bg-[#f8fafc] p-3">
+              <dt className="text-[10px] font-extrabold uppercase tracking-wider text-[#64748b]">Loan Term</dt>
+              <dd className="mt-1 font-extrabold text-[#272727]">{plan.installmentTermMonths} months</dd>
+            </div>
+          )}
+          <div className="rounded-lg border border-[#e2e8f0] bg-[#f8fafc] p-3 sm:col-span-2">
+            <dt className="text-[10px] font-extrabold uppercase tracking-wider text-[#64748b]">After Account Creation</dt>
+            <dd className="mt-1 font-bold text-[#334155]">
+              Your selected payment plan will be applied and the remaining required amount will appear in your customer dashboard.
+            </dd>
+          </div>
+        </dl>
+
+        <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold leading-5 text-emerald-800">
+          The reservation fee is part of the property payment and will be deducted from your remaining balance.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-sm">

@@ -1,6 +1,12 @@
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createPaymentPlanForReservation, validatePaymentAmount } from '@/lib/payments/server';
+import {
+  calculatePaymentPlan,
+  getAmountDueForReservationStart,
+  getInterestRateForTerm,
+  roundMoney
+} from '@/lib/payments/paymentMath';
 import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
 import { logAuditEvent } from '@/lib/audit/logAuditEvent';
@@ -143,7 +149,7 @@ export async function POST(request) {
 
   const { data: property, error: propertyError } = await admin
     .from('properties')
-    .select('id, village_id, reservation_fee, status')
+    .select('id, village_id, price, reservation_fee, interest_rate, status')
     .eq('id', propertyId)
     .single();
 
@@ -169,6 +175,39 @@ export async function POST(request) {
 
   const code = reservationCode();
   const reservationFee = property.reservation_fee || 5000;
+  const isGuest = !user;
+  const preferredPlan = calculatePaymentPlan({
+    propertyPrice: property.price,
+    reservationFee,
+    paymentType,
+    downpaymentAmount,
+    downpaymentPercentage,
+    installmentTermMonths,
+    interestRate: getInterestRateForTerm(property.interest_rate, Number(installmentTermMonths || 0) / 12)
+  });
+  const amountDueToday = getAmountDueForReservationStart({
+    isAuthenticated: !isGuest,
+    propertyPrice: property.price,
+    reservationFee,
+    paymentType,
+    requiredDownpayment: preferredPlan.requiredDownpayment,
+    remainingDownpayment: preferredPlan.remainingDownpayment,
+    fullPaymentAmount: preferredPlan.totalContractPrice
+  });
+  const requestedAmount = roundMoney(submittedAmount || amountDueToday);
+
+  if (requestedAmount !== amountDueToday) {
+    await admin
+      .from('properties')
+      .update({ status: 'available', updated_at: new Date().toISOString() })
+      .eq('id', propertyId);
+
+    return json(400, {
+      error: isGuest && requestedAmount > reservationFee
+        ? 'Please create an account first before paying more than the reservation fee.'
+        : `The submitted payment must equal the amount due today: ${amountDueToday}.`
+    });
+  }
   const expiresAt = new Date();
   expiresAt.setHours(expiresAt.getHours() + 48);
   let createdReservationId = null;
@@ -186,6 +225,19 @@ export async function POST(request) {
         guest_phone: user ? null : phone,
         status: 'pending_verification',
         reservation_fee: reservationFee,
+        payment_type: preferredPlan.paymentType,
+        total_contract_price: preferredPlan.totalContractPrice,
+        downpayment_amount: preferredPlan.downpaymentAmount,
+        downpayment_percentage: preferredPlan.downpaymentPercentage,
+        initial_amount_due: isGuest ? reservationFee : preferredPlan.initialAmountDue,
+        amount_due_today: amountDueToday,
+        amount_paid: 0,
+        remaining_balance: preferredPlan.remainingBalance,
+        installment_term_months: preferredPlan.installmentTermMonths,
+        monthly_payment: preferredPlan.monthlyPayment,
+        interest_rate: preferredPlan.interestRate,
+        payment_plan_status: isGuest ? 'not_started' : preferredPlan.status,
+        payment_amount_indicator: 'not_paid',
         expires_at: expiresAt.toISOString(),
         reserved_at: new Date().toISOString()
       })
@@ -195,30 +247,38 @@ export async function POST(request) {
     if (reservationError) throw reservationError;
     createdReservationId = reservation.id;
 
-    const paymentPlan = await createPaymentPlanForReservation(admin, {
-      reservationId: reservation.id,
-      propertyId: property.id,
-      customerId: user?.id || null,
-      villageId: property.village_id,
-      paymentType,
-      downpaymentAmount,
-      downpaymentPercentage,
-      installmentTermMonths
-    });
+    let paymentPlan = null;
+    let maximumPayableAmount = amountDueToday;
+    let amount = requestedAmount;
+    let paymentPurpose = 'reservation_fee';
 
-    const paymentPurpose = paymentType === 'full_payment' ? 'full_payment' : 'downpayment';
-    const requestedAmount = submittedAmount || paymentPlan.initial_amount_due;
-    const { maximumPayableAmount, amount } = await validatePaymentAmount(admin, {
-      paymentPlanId: paymentPlan.id,
-      submittedAmount: requestedAmount,
-      paymentPurpose
-    });
+    if (!isGuest) {
+      paymentPlan = await createPaymentPlanForReservation(admin, {
+        reservationId: reservation.id,
+        propertyId: property.id,
+        customerId: user.id,
+        villageId: property.village_id,
+        paymentType,
+        downpaymentAmount,
+        downpaymentPercentage,
+        installmentTermMonths
+      });
+
+      paymentPurpose = paymentType === 'full_payment' ? 'full_payment' : 'downpayment';
+      const validation = await validatePaymentAmount(admin, {
+        paymentPlanId: paymentPlan.id,
+        submittedAmount: requestedAmount,
+        paymentPurpose
+      });
+      maximumPayableAmount = validation.maximumPayableAmount;
+      amount = validation.amount;
+    }
 
     const { error: paymentError } = await admin
       .from('payments')
       .insert({
         reservation_id: reservation.id,
-        payment_plan_id: paymentPlan.id,
+        payment_plan_id: paymentPlan?.id || null,
         village_id: property.village_id,
         customer_id: user?.id || null,
         amount,
@@ -293,7 +353,7 @@ export async function POST(request) {
       })
     ]);
 
-    return json(200, { reservationCode: code, email });
+    return json(200, { reservationCode: code, email, isGuest });
   } catch (err) {
     if (createdReservationId) {
       const { error: cleanupError } = await admin
