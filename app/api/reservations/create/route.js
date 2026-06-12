@@ -56,6 +56,7 @@ async function readPayload(request) {
   return {
     fields: Object.fromEntries([...formData.entries()].filter(([, value]) => typeof value === 'string')),
     files: {
+      receiptFile: formData.get('receiptFile'),
       validIdFile: formData.get('validIdFile'),
       incomeProofFile: formData.get('incomeProofFile')
     }
@@ -100,6 +101,7 @@ export async function POST(request) {
     fullName,
     email,
     phone,
+    address,
     paymentMethod,
     receiptRef,
     validIdUrl,
@@ -123,13 +125,97 @@ export async function POST(request) {
     return json(400, { error: 'Installment term is required for installment payment.' });
   }
 
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  let reservationFullName = String(fullName || '').trim();
+  let reservationEmail = String(email || '').trim().toLowerCase();
+  let reservationPhone = String(phone || '').trim();
+  let customerProfileUpdates = null;
+
+  if (user) {
+    let { data: profile, error: profileError } = await admin
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (profileError) {
+      return json(400, { error: 'Your customer profile could not be loaded. Please refresh and try again.' });
+    }
+
+    if (!profile) {
+      const accountRole = user.app_metadata?.role || user.user_metadata?.role || 'customer';
+      if (accountRole !== 'customer') {
+        return json(403, { error: 'Staff accounts are blocked from making property reservations.' });
+      }
+
+      const { data: recoveredProfile, error: recoveryError } = await admin
+        .from('profiles')
+        .insert({
+          id: user.id,
+          full_name: reservationFullName || user.user_metadata?.full_name || 'Valued Customer',
+          email: String(user.email || reservationEmail).trim().toLowerCase(),
+          phone: reservationPhone || user.user_metadata?.phone || null,
+          role: 'customer'
+        })
+        .select('*')
+        .single();
+
+      if (recoveryError || !recoveredProfile) {
+        return json(400, {
+          error: 'Your customer profile could not be restored. Please sign out, sign in again, and retry.'
+        });
+      }
+
+      profile = recoveredProfile;
+    }
+
+    if (profile.role !== 'customer') {
+      return json(403, { error: 'Staff accounts are blocked from making property reservations.' });
+    }
+    if (profile.status && profile.status !== 'active') {
+      return json(403, { error: 'This customer account is not active.' });
+    }
+
+    reservationEmail = String(user.email || profile.email || '').trim().toLowerCase();
+    reservationFullName = reservationFullName || profile.full_name;
+    reservationPhone = reservationPhone || profile.phone || '';
+
+    customerProfileUpdates = {
+      full_name: reservationFullName,
+      phone: reservationPhone,
+      updated_at: new Date().toISOString()
+    };
+    if (Object.prototype.hasOwnProperty.call(profile, 'address')) {
+      customerProfileUpdates.address = String(address || profile.address || '').trim();
+    }
+  } else {
+    const { data: existingProfile, error: existingProfileError } = await admin
+      .from('profiles')
+      .select('id')
+      .ilike('email', reservationEmail)
+      .maybeSingle();
+
+    if (existingProfileError) {
+      return json(400, { error: 'The reservation email could not be verified.' });
+    }
+    if (existingProfile) {
+      return json(409, {
+        error: 'An account already exists with this email. Please log in to continue your reservation.'
+      });
+    }
+  }
+
   let savedValidIdUrl = validIdUrl;
   let savedIncomeProofUrl = incomeProofUrl;
+  let savedReceiptUrl = '';
 
   if (files.validIdFile || files.incomeProofFile) {
     try {
-      savedValidIdUrl = await saveRequiredDocument(files.validIdFile, fullName, 'Government ID');
-      savedIncomeProofUrl = await saveRequiredDocument(files.incomeProofFile, fullName, 'Proof of Income');
+      savedValidIdUrl = await saveRequiredDocument(files.validIdFile, reservationFullName, 'Government ID');
+      savedIncomeProofUrl = await saveRequiredDocument(files.incomeProofFile, reservationFullName, 'Proof of Income');
     } catch (err) {
       return json(400, { error: err.message || 'Documents could not be uploaded.' });
     }
@@ -139,19 +225,11 @@ export async function POST(request) {
     return json(400, { error: 'Government ID and Proof of Income documents are required before reservation.' });
   }
 
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (user) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    if (profile && profile.role !== 'customer') {
-      return json(403, { error: 'Staff accounts are blocked from making property reservations.' });
+  if (files.receiptFile instanceof File && files.receiptFile.size > 0) {
+    try {
+      savedReceiptUrl = await saveRequiredDocument(files.receiptFile, reservationFullName, 'Payment Receipt');
+    } catch (err) {
+      return json(400, { error: err.message || 'The payment receipt could not be uploaded.' });
     }
   }
 
@@ -228,9 +306,9 @@ export async function POST(request) {
         village_id: property.village_id,
         property_id: property.id,
         customer_id: user?.id || null,
-        guest_name: user ? null : fullName,
-        guest_email: user ? null : email,
-        guest_phone: user ? null : phone,
+        guest_name: user ? null : reservationFullName,
+        guest_email: user ? null : reservationEmail,
+        guest_phone: user ? null : reservationPhone,
         status: 'pending_verification',
         reservation_fee: reservationFee,
         payment_type: preferredPlan.paymentType,
@@ -294,7 +372,7 @@ export async function POST(request) {
         payment_status: 'pending_verification',
         payment_purpose: paymentPurpose,
         reference_number: receiptRef || fallbackRef(),
-        proof_url: 'https://images.unsplash.com/photo-1554415707-6e8cfc93fe23?auto=format&fit=crop&w=400&q=80',
+        proof_url: savedReceiptUrl || 'QR payment submitted with transaction reference',
         maximum_payable_amount: maximumPayableAmount,
         submitted_amount: amount,
         accepted_amount: amount,
@@ -326,6 +404,17 @@ export async function POST(request) {
 
     const { error: docsError } = await admin.from('documents').insert(docsPayload);
     if (docsError) throw docsError;
+
+    if (user && customerProfileUpdates) {
+      const { error: profileUpdateError } = await admin
+        .from('profiles')
+        .update(customerProfileUpdates)
+        .eq('id', user.id);
+
+      if (profileUpdateError) {
+        throw new Error('Your contact details could not be updated safely.');
+      }
+    }
 
     await Promise.all([
       logAuditEvent({
@@ -382,11 +471,11 @@ export async function POST(request) {
         title: 'Reservation Submitted',
         message: customerMessage,
         type: 'reservation_pending',
-        userName: fullName,
-        actionUrl: `/auth/register?email=${encodeURIComponent(email)}`
+        userName: reservationFullName,
+        actionUrl: `/auth/register?email=${encodeURIComponent(reservationEmail)}`
       });
       await sendEmail({
-        to: email,
+        to: reservationEmail,
         subject: emailContent.subject,
         html: emailContent.html,
         text: emailContent.text
@@ -402,14 +491,14 @@ export async function POST(request) {
       admin,
       recipients: [...villageAdmins, ...accountingUsers, ...superAdmins],
       title: 'New Reservation Submitted',
-      message: `${fullName} submitted reservation ${code} with a ${paymentPurpose.replaceAll('_', ' ')} payment awaiting review.`,
+      message: `${reservationFullName} submitted reservation ${code} with a ${paymentPurpose.replaceAll('_', ' ')} payment awaiting review.`,
       type: 'reservation_created_admin',
       villageId: property.village_id,
       metadata: { reservationId: reservation.id, paymentId: payment.id },
       actionUrl: '/village-admin/reservations'
     });
 
-    return json(200, { reservationCode: code, email, isGuest });
+    return json(200, { reservationCode: code, email: reservationEmail, isGuest });
   } catch (err) {
     if (createdReservationId) {
       const { error: cleanupError } = await admin

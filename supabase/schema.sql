@@ -11,6 +11,7 @@ CREATE TABLE public.profiles (
     full_name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
     phone TEXT,
+    address TEXT,
     role TEXT NOT NULL DEFAULT 'customer' CHECK (role IN ('super_admin', 'village_admin', 'accounting', 'customer', 'architect')),
     avatar_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,

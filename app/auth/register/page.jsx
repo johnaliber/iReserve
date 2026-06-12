@@ -22,11 +22,19 @@ export default function RegisterPage() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    const reservationEmail = new URLSearchParams(window.location.search).get('email');
-    if (reservationEmail) {
-      Promise.resolve().then(() => setEmail(reservationEmail));
+    async function initializeRegistration() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        router.replace('/customer/dashboard');
+        return;
+      }
+
+      const reservationEmail = new URLSearchParams(window.location.search).get('email');
+      if (reservationEmail) setEmail(reservationEmail);
     }
-  }, []);
+
+    initializeRegistration();
+  }, [router, supabase]);
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -62,7 +70,16 @@ export default function RegisterPage() {
       });
 
       if (authError) {
-        setError(authError.message);
+        const duplicateAccount = /already|registered|exists/i.test(authError.message || '');
+        setError(duplicateAccount
+          ? 'An account already exists with this email. Please log in to continue your reservation.'
+          : authError.message);
+        setLoading(false);
+        return;
+      }
+
+      if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+        setError('An account already exists with this email. Please log in to continue your reservation.');
         setLoading(false);
         return;
       }

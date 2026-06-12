@@ -363,6 +363,26 @@ export default function PropertiesPanel({
       {/* RENDER FOR LOTS / HOUSES */}
       {(object_type === 'lot' || object_type === 'house') && (
         <div className="space-y-3">
+          <div className={`rounded-xl border p-3.5 ${
+            selectedObject.linked_property_id
+              ? 'border-emerald-200 bg-emerald-50'
+              : 'border-amber-200 bg-amber-50'
+          }`}>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Link Status</p>
+            <p className={`mt-1 text-xs font-bold ${
+              selectedObject.linked_property_id ? 'text-emerald-700' : 'text-amber-700'
+            }`}>
+              {selectedObject.linked_property_id
+                ? 'Property details linked'
+                : 'No property details yet'}
+            </p>
+            {!selectedObject.linked_property_id && (
+              <p className="mt-1 text-[10px] leading-relaxed text-slate-600">
+                Create property details in Blueprint Preview, or link an existing record below.
+              </p>
+            )}
+          </div>
+
           <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-xl p-3.5">
             <h5 className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1 mb-2">
               <LinkIcon className="w-3.5 h-3.5" />

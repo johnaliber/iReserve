@@ -21,7 +21,8 @@ function SuccessContent() {
   const code = searchParams.get('reservation_code') || 'RES-DEMO';
   const email = searchParams.get('email') || 'you@example.com';
   
-  const [isGuest, setIsGuest] = useState(true);
+  const existingCustomerFlow = searchParams.get('flow') === 'existing_customer';
+  const [isGuest, setIsGuest] = useState(!existingCustomerFlow);
 
   useEffect(() => {
     async function checkAuth() {
@@ -34,7 +35,7 @@ function SuccessContent() {
   }, [supabase]);
 
   return (
-    <div className="w-full max-w-xl bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-8 shadow-2xl relative z-10 text-center space-y-6">
+    <div className="relative z-10 mx-auto w-full max-w-xl space-y-6 rounded-2xl border border-slate-800/80 bg-slate-900/60 p-8 text-center shadow-2xl backdrop-blur-xl">
       
       {/* Checkmark animation */}
       <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mb-2 shadow-lg shadow-emerald-500/10">
@@ -119,11 +120,45 @@ export default function ReservationSuccessPage() {
       <div className="absolute bottom-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full bg-teal-950/20 blur-[120px] pointer-events-none" />
       
       <div className="relative z-10 w-full max-w-3xl space-y-5">
-        <ReservationProgressSteps currentStep={5} />
         <Suspense fallback={<DelayedLoadingState loading message="Loading your reservation..." />}>
-          <SuccessContent />
+          <SuccessPageContent />
         </Suspense>
       </div>
     </div>
+  );
+}
+
+function SuccessPageContent() {
+  const searchParams = useSearchParams();
+  const supabase = createClient();
+  const [existingCustomer, setExistingCustomer] = useState(
+    searchParams.get('flow') === 'existing_customer'
+  );
+
+  useEffect(() => {
+    async function verifyCustomerSession() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      if (profile?.role === 'customer') setExistingCustomer(true);
+    }
+
+    verifyCustomerSession();
+  }, [supabase]);
+
+  return (
+    <>
+      <ReservationProgressSteps
+        currentStep={existingCustomer ? 4 : 5}
+        existingCustomer={existingCustomer}
+      />
+      <SuccessContent />
+    </>
   );
 }

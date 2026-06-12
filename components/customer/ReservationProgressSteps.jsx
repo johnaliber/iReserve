@@ -1,11 +1,14 @@
 import { Check } from 'lucide-react';
 
-const steps = ['Choose Lot', 'Fill Details', 'Upload Receipt / Pay', 'Create Account', 'Wait for Approval'];
+const guestSteps = ['Choose Lot', 'Fill Details', 'Upload Receipt / Pay', 'Create Account', 'Wait for Approval'];
+const customerSteps = ['Choose Lot', 'Confirm Details', 'Upload Receipt / Pay', 'Wait for Approval'];
 
-export default function ReservationProgressSteps({ currentStep = 1 }) {
+export default function ReservationProgressSteps({ currentStep = 1, existingCustomer = false }) {
+  const steps = existingCustomer ? customerSteps : guestSteps;
+
   return (
     <div className="overflow-x-auto rounded-2xl border border-[#e2e8f0] bg-white p-4 shadow-sm">
-      <ol className="flex min-w-[680px] items-center">
+      <ol className={`flex items-center ${existingCustomer ? 'min-w-[560px]' : 'min-w-[680px]'}`}>
         {steps.map((step, index) => {
           const number = index + 1;
           const complete = number < currentStep;

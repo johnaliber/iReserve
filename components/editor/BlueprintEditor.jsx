@@ -9,6 +9,7 @@ import PropertiesPanel from './PropertiesPanel';
 import LayersPanel from './LayersPanel';
 import { Loader2, ArrowLeft, CheckCircle, AlertTriangle, Circle, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import Link from 'next/link';
+import { prepareBlueprintObjectDuplicate } from '@/lib/editor/duplicateObject';
 
 // Dynamically import CanvasStage with SSR disabled as Konva requires window context
 const CanvasStage = dynamic(() => import('./CanvasStage'), { ssr: false });
@@ -75,53 +76,6 @@ function withPersistableIds(items) {
   }));
 }
 
-function cloneObject(object) {
-  return JSON.parse(JSON.stringify(object));
-}
-
-function offsetObjectData(data = {}, offset = 32) {
-  const nextData = cloneObject(data);
-
-  if (Array.isArray(nextData.points)) {
-    nextData.points = nextData.points.map((value, idx) => (
-      idx % 2 === 0 ? value + offset : value + offset
-    ));
-  } else {
-    nextData.x = (nextData.x || 0) + offset;
-    nextData.y = (nextData.y || 0) + offset;
-  }
-
-  if (Array.isArray(nextData.curveControls)) {
-    nextData.curveControls = nextData.curveControls.map((control) => ({
-      ...control,
-      x: (control.x || 0) + offset,
-      y: (control.y || 0) + offset
-    }));
-  }
-
-  return nextData;
-}
-
-function preparePastedObject(object, index) {
-  const pastedObject = {
-    ...cloneObject(object),
-    id: createObjectId(),
-    object_data: offsetObjectData(object.object_data, 32),
-    layer_order: (object.layer_order || 0) + index + 1
-  };
-
-  if (pastedObject.object_type === 'lot' || pastedObject.object_type === 'house') {
-    pastedObject.linked_property_id = null;
-    delete pastedObject.object_data.property_code;
-    delete pastedObject.object_data.block_number;
-    delete pastedObject.object_data.lot_number;
-    delete pastedObject.object_data.blockNumber;
-    delete pastedObject.object_data.lotNumber;
-  }
-
-  return pastedObject;
-}
-
 function isImageFile(file) {
   return ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(file?.type);
 }
@@ -162,6 +116,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
   const [clipboardObjects, setClipboardObjects] = useState([]);
   const [amenityShapeMode, setAmenityShapeMode] = useState('icon');
+  const [duplicateNotice, setDuplicateNotice] = useState('');
 
   useEffect(() => {
     Promise.resolve().then(() => {
@@ -267,7 +222,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
     const selectedSet = new Set(selectedObjectIds);
     const copiedObjects = objects
       .filter((object) => selectedSet.has(object.id))
-      .map((object) => cloneObject(object));
+      .map((object) => JSON.parse(JSON.stringify(object)));
 
     setClipboardObjects(copiedObjects);
   }, [objects, selectedObjectIds]);
@@ -275,13 +230,32 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
   const handlePasteObjects = useCallback(() => {
     if (!clipboardObjects.length) return;
 
-    const pastedObjects = clipboardObjects.map((object, index) => preparePastedObject(object, index));
+    const topLayer = objects.reduce(
+      (highest, object) => Math.max(highest, object.layer_order || 0),
+      0
+    );
+    const pastedObjects = clipboardObjects.map((object, index) => (
+      prepareBlueprintObjectDuplicate(object, {
+        id: createObjectId(),
+        layerOrder: topLayer + index + 1,
+        offset: 24
+      })
+    ));
     const pastedIds = pastedObjects.map((object) => object.id);
+    const clearedPropertyDetails = pastedObjects.some(
+      (object) => object.object_type === 'lot' || object.object_type === 'house'
+    );
 
     updateObjectsWithHistory([...objects, ...pastedObjects]);
     setSelectedObjectIds(pastedIds);
     setSelectedObjectId(pastedIds[pastedIds.length - 1] || null);
     setClipboardObjects(pastedObjects);
+    setDuplicateNotice(
+      clearedPropertyDetails
+        ? 'Object duplicated. Property details were not copied.'
+        : 'Object duplicated.'
+    );
+    window.setTimeout(() => setDuplicateNotice(''), 3000);
   }, [clipboardObjects, objects, updateObjectsWithHistory]);
 
   // Global Keyboard Shortcuts for Drawing Tools
@@ -513,6 +487,29 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
         if (insertError) throw insertError;
       }
 
+      const duplicatedObjects = objectsForSave.filter((obj) => obj.duplicate_source_id);
+      if (duplicatedObjects.length > 0) {
+        const { data: { user } } = await supabase.auth.getUser();
+        const { error: auditError } = await supabase
+          .from('audit_logs')
+          .insert(duplicatedObjects.map((obj) => ({
+            user_id: user?.id || null,
+            village_id: resolvedVillageId,
+            action: 'blueprint_object_duplicated',
+            entity_type: 'blueprint_object',
+            entity_id: obj.id,
+            metadata: {
+              original_object_id: obj.duplicate_source_id,
+              copied_visual_only: true,
+              linked_property_cleared: true
+            }
+          })));
+
+        if (auditError) {
+          console.warn('Blueprint duplicate audit logging skipped:', formatSupabaseError(auditError));
+        }
+      }
+
       const { error: unlinkPropertiesError } = await supabase
         .from('properties')
         .update({ blueprint_object_id: null })
@@ -539,7 +536,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
         }
       }
 
-      setObjects(objectsForSave);
+      setObjects(objectsForSave.map(({ duplicate_source_id, ...obj }) => obj));
       setHasUnsavedChanges(false);
       setLastSavedAt(new Date());
       setSaveStatus('saved');
@@ -749,6 +746,12 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
               <span className="text-red-400">{saveError || 'Error synchronizing database.'}</span>
             </>
           )}
+        </div>
+      )}
+
+      {duplicateNotice && (
+        <div className="absolute left-1/2 top-16 z-50 -translate-x-1/2 rounded-full border border-emerald-200 bg-white px-4 py-2 text-xs font-semibold text-emerald-700 shadow-xl">
+          {duplicateNotice}
         </div>
       )}
 

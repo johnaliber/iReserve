@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import DashboardShell from '@/components/layout/DashboardShell';
 import { 
+  AlertCircle,
   AlertTriangle,
   BellRing,
   Building2,
@@ -21,6 +22,7 @@ import {
   ReceiptText,
   Users,
   Loader2,
+  CheckCircle2,
 } from 'lucide-react';
 import PaymentVerificationPanel from '@/components/accounting/PaymentVerificationPanel';
 import { formatPeso } from '@/lib/payments/paymentMath';
@@ -177,6 +179,7 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
   const [cashReceipt, setCashReceipt] = useState('');
   const [cashNotes, setCashNotes] = useState('');
   const [recordingCash, setRecordingCash] = useState(false);
+  const [actionAlert, setActionAlert] = useState(null);
   
   // Filtering states
   const [statusFilter, setStatusFilter] = useState('');
@@ -204,6 +207,12 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
   const [notes, setNotes] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
   const [auditing, setAuditing] = useState(false);
+
+  useEffect(() => {
+    if (!actionAlert) return undefined;
+    const timer = window.setTimeout(() => setActionAlert(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [actionAlert]);
 
   const fetchPayments = useCallback(async (villageId) => {
     if (!villageId) {
@@ -291,12 +300,24 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
       }
 
       if (payload.email?.sent) {
-        alert('Customer notification and email sent.');
+        setActionAlert({
+          type: 'success',
+          title: 'Customer notified',
+          message: 'The in-app notification and email were sent successfully.'
+        });
       } else {
-        alert('In-app notification sent, but email delivery failed. Check the Gmail SMTP App Password configuration.');
+        setActionAlert({
+          type: 'warning',
+          title: 'In-app notification sent',
+          message: 'The customer was notified in iReserve, but the email was not delivered. Check the Gmail SMTP configuration.'
+        });
       }
     } catch (err) {
-      alert(err.message || 'Customer notification failed.');
+      setActionAlert({
+        type: 'error',
+        title: 'Notification failed',
+        message: err.message || 'The customer notification could not be sent.'
+      });
     } finally {
       setNotifyingPlanId(null);
     }
@@ -372,11 +393,22 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Cash payment could not be recorded.');
 
-      alert('Cash payment recorded and ledger advanced.');
-      closeCashPayment();
+      setActionAlert({
+        type: 'success',
+        title: 'Cash payment recorded',
+        message: 'The ledger was updated and the customer was notified.'
+      });
+      setCashPlan(null);
+      setCashAmount('');
+      setCashReceipt('');
+      setCashNotes('');
       await fetchPayments(selectedVillageId);
     } catch (err) {
-      alert(err.message || 'Cash payment could not be recorded.');
+      setActionAlert({
+        type: 'error',
+        title: 'Cash payment not recorded',
+        message: err.message || 'The cash payment could not be recorded.'
+      });
     } finally {
       setRecordingCash(false);
     }
@@ -628,6 +660,46 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
 
   return (
     <DashboardShell>
+      {actionAlert && (
+        <div className="fixed right-4 top-4 z-[120] w-[calc(100%-2rem)] max-w-md">
+          <div
+            role="status"
+            className={`flex items-start gap-3 rounded-2xl border bg-white p-4 shadow-2xl ${
+              actionAlert.type === 'success'
+                ? 'border-emerald-200'
+                : actionAlert.type === 'warning'
+                  ? 'border-amber-200'
+                  : 'border-rose-200'
+            }`}
+          >
+            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+              actionAlert.type === 'success'
+                ? 'bg-emerald-50 text-emerald-700'
+                : actionAlert.type === 'warning'
+                  ? 'bg-amber-50 text-amber-700'
+                  : 'bg-rose-50 text-rose-700'
+            }`}>
+              {actionAlert.type === 'success'
+                ? <CheckCircle2 className="h-5 w-5" />
+                : actionAlert.type === 'warning'
+                  ? <AlertTriangle className="h-5 w-5" />
+                  : <AlertCircle className="h-5 w-5" />}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-extrabold text-[#17211d]">{actionAlert.title}</p>
+              <p className="mt-1 text-xs leading-5 text-[#64748b]">{actionAlert.message}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActionAlert(null)}
+              aria-label="Dismiss alert"
+              className="rounded-lg p-1.5 text-[#64748b] transition hover:bg-[#f1f5f3] hover:text-[#17211d]"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
       <div className="space-y-6">
         
         {/* Header Title */}
@@ -1225,29 +1297,41 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
         )}
 
         {view === 'accounts' && cashPlan && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#17211d]/55 p-4 backdrop-blur-sm">
             <form
               onSubmit={handleRecordCashPayment}
-              className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-800 bg-white shadow-2xl"
+              className="w-full max-w-lg overflow-hidden rounded-3xl border border-white/80 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.28)]"
             >
-              <div className="border-b border-slate-200 px-5 py-4">
-                <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600">Accounting Cash Payment</p>
-                <h3 className="mt-1 text-lg font-extrabold text-slate-900">
-                  {cashPlan.plan.reservations?.profiles?.full_name || cashPlan.plan.reservations?.guest_name || 'Customer Account'}
-                </h3>
+              <div className="flex items-start justify-between gap-4 border-b border-[#e2e8f0] bg-[#f8faf9] px-6 py-5">
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-emerald-700">Accounting Cash Payment</p>
+                  <h3 className="mt-1 text-xl font-extrabold text-[#17211d]">
+                    {cashPlan.plan.reservations?.profiles?.full_name || cashPlan.plan.reservations?.guest_name || 'Customer Account'}
+                  </h3>
+                  <p className="mt-1 text-xs text-[#64748b]">Record an office payment and issue an official receipt.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeCashPayment}
+                  disabled={recordingCash}
+                  aria-label="Close cash payment dialog"
+                  className="rounded-xl border border-[#dbe4ee] bg-white p-2 text-[#64748b] transition hover:bg-[#eef5f1] hover:text-[#17211d] disabled:opacity-50"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
 
-              <div className="space-y-4 p-5">
-                <div className="grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
+              <div className="space-y-5 p-6">
+                <div className="grid grid-cols-2 gap-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-xs">
                   <div>
-                    <p className="font-bold uppercase tracking-wider text-slate-500">Property</p>
-                    <p className="mt-1 font-extrabold text-slate-900">{cashPlan.plan.reservations?.properties?.property_code || cashPlan.plan.reservations?.reservation_code}</p>
+                    <p className="font-extrabold uppercase tracking-wider text-emerald-800">Property</p>
+                    <p className="mt-1.5 font-extrabold text-[#17211d]">{cashPlan.plan.reservations?.properties?.property_code || cashPlan.plan.reservations?.reservation_code}</p>
                   </div>
                   <div>
-                    <p className="font-bold uppercase tracking-wider text-slate-500">
+                    <p className="font-extrabold uppercase tracking-wider text-emerald-800">
                       {cashPlan.plan.payment_type === 'full_payment' ? 'Payment Type' : 'Next Due'}
                     </p>
-                    <p className="mt-1 font-extrabold text-slate-900">
+                    <p className="mt-1.5 font-extrabold text-[#17211d]">
                       {cashPlan.plan.payment_type === 'full_payment'
                         ? 'Remaining Full Balance'
                         : formatDate(cashPlan.status.nextDue?.due_date)}
@@ -1257,53 +1341,56 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Cash Amount</label>
-                    <input
-                      type="number"
-                      required
-                      min="1"
-                      step="0.01"
-                      value={cashAmount}
-                      onChange={(event) => setCashAmount(event.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-900 outline-none transition focus:border-emerald-500"
-                    />
+                    <label className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-[#475569]">Cash Amount</label>
+                    <div className="flex overflow-hidden rounded-xl border border-[#cbd5e1] bg-white focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-emerald-600/10">
+                      <span className="flex items-center border-r border-[#e2e8f0] bg-[#f8fafc] px-3 text-sm font-extrabold text-[#475569]">PHP</span>
+                      <input
+                        type="number"
+                        required
+                        min="1"
+                        step="0.01"
+                        value={cashAmount}
+                        onChange={(event) => setCashAmount(event.target.value)}
+                        className="min-w-0 flex-1 bg-white px-3 py-3 text-sm font-extrabold text-[#17211d] outline-none"
+                      />
+                    </div>
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-slate-500">OR / Receipt No.</label>
+                    <label className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-[#475569]">OR / Receipt No.</label>
                     <input
                       type="text"
                       value={cashReceipt}
                       onChange={(event) => setCashReceipt(event.target.value)}
                       placeholder="Auto if blank"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-500"
+                      className="w-full rounded-xl border border-[#cbd5e1] bg-white px-3 py-3 text-sm font-semibold text-[#17211d] outline-none transition placeholder:text-[#94a3b8] focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/10"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Accounting Notes</label>
+                  <label className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-[#475569]">Accounting Notes</label>
                   <textarea
                     rows={3}
                     value={cashNotes}
                     onChange={(event) => setCashNotes(event.target.value)}
                     placeholder="Cash received at office, collector name, or other audit notes."
-                    className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-500"
+                    className="w-full resize-none rounded-xl border border-[#cbd5e1] bg-white px-3 py-3 text-sm text-[#17211d] outline-none transition placeholder:text-[#94a3b8] focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/10"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 border-t border-slate-200 bg-slate-50 p-4">
+              <div className="grid grid-cols-2 gap-3 border-t border-[#e2e8f0] bg-[#f8faf9] p-5">
                 <button
                   type="button"
                   onClick={closeCashPayment}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100"
+                  className="min-h-11 rounded-xl border border-[#cbd5e1] bg-white px-4 text-xs font-extrabold text-[#334155] transition hover:border-[#94a3b8] hover:bg-[#f1f5f9]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={recordingCash}
-                  className="rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-extrabold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="min-h-11 rounded-xl bg-emerald-700 px-4 text-xs font-extrabold text-white shadow-sm transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {recordingCash ? 'Recording...' : 'Record Cash Payment'}
                 </button>

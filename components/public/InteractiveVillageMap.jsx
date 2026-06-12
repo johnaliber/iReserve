@@ -125,37 +125,7 @@ function drawCurvePath(context, points = [], controls = []) {
   }
 }
 
-function normalizeLotPart(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/^0+(?=\d)/, '')
-    .replace(/[^a-z0-9]/g, '');
-}
-
-function getObjectBlockLot(object) {
-  const data = object?.object_data || {};
-  const block = data.block_number ?? data.blockNumber ?? data.block;
-  const lot = data.lot_number ?? data.lotNumber ?? data.lot;
-  if (block !== undefined && lot !== undefined) {
-    return { block: normalizeLotPart(block), lot: normalizeLotPart(lot) };
-  }
-
-  const label = String(data.property_code || data.propertyCode || data.name || data.label || '');
-  const explicit = label.match(/block\s*[-:#]?\s*([a-z0-9]+).*?lot\s*[-:#]?\s*([a-z0-9]+)/i);
-  if (explicit) {
-    return { block: normalizeLotPart(explicit[1]), lot: normalizeLotPart(explicit[2]) };
-  }
-
-  const compact = label.match(/\bb\s*([a-z0-9]+)\s*[-_/ ]*l\s*([a-z0-9]+)\b/i);
-  if (compact) {
-    return { block: normalizeLotPart(compact[1]), lot: normalizeLotPart(compact[2]) };
-  }
-
-  return null;
-}
-
-function PublicImageLayer({ object }) {
+function PublicImageLayer({ object, adminPropertyMode = false }) {
   const [image, setImage] = useState(null);
   const data = object.object_data || {};
   const imageUrl = data.image_url || data.imageUrl;
@@ -168,7 +138,11 @@ function PublicImageLayer({ object }) {
     return undefined;
   }, [imageUrl]);
 
-  if (!image || object.is_visible === false || data.showInPublicMap === false) return null;
+  const isVisibleForMode = adminPropertyMode
+    ? data.showInAdminPreview !== false
+    : data.showInPublicMap !== false;
+
+  if (!image || object.is_visible === false || !isVisibleForMode) return null;
 
   return (
     <KonvaImage
@@ -445,23 +419,11 @@ export default function InteractiveVillageMap({
       .filter((prop) => prop.blueprint_object_id)
       .map((prop) => [prop.blueprint_object_id, prop])
   );
-  const displayedPropsByBlockLot = new Map(
-    displayedProps.map((prop) => [
-      `${normalizeLotPart(prop.block_number)}::${normalizeLotPart(prop.lot_number)}`,
-      prop
-    ])
-  );
-
   const getPropertyForObject = (object) => {
     if (!object) return null;
-    const directMatch = displayedPropsById.get(object.linked_property_id)
-      || displayedPropsByObjectId.get(object.id);
-    if (directMatch) return directMatch;
-
-    const blockLot = getObjectBlockLot(object);
-    return blockLot
-      ? displayedPropsByBlockLot.get(`${blockLot.block}::${blockLot.lot}`) || null
-      : null;
+    return displayedPropsById.get(object.linked_property_id)
+      || displayedPropsByObjectId.get(object.id)
+      || null;
   };
 
   // Find dynamic property status color mapping
@@ -939,7 +901,11 @@ export default function InteractiveVillageMap({
             {layers.reference && objects
               .filter(o => o.object_type === 'image_layer' || (o.object_type === 'landmark' && o.object_data?.kind === 'reference_image'))
               .map((object) => (
-                <PublicImageLayer key={object.id} object={object} />
+                <PublicImageLayer
+                  key={object.id}
+                  object={object}
+                  adminPropertyMode={adminPropertyMode}
+                />
               ))}
           </Layer>
 
@@ -1331,12 +1297,16 @@ export default function InteractiveVillageMap({
               </div>
             ) : (
               <div className="p-5">
-                <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#94a3b8]">Map Area</p>
+                <p className="text-[10px] font-extrabold uppercase tracking-wider text-amber-600">
+                  {adminPropertyMode ? 'Needs Details' : 'Not Available'}
+                </p>
                 <h3 className="mt-1 text-lg font-extrabold text-[#171717]">
-                  {hoverPreview.object?.object_data?.name || 'Lot details unavailable'}
+                  No property details yet
                 </h3>
                 <p className="mt-2 text-xs leading-5 text-[#64748b]">
-                  Property information has not been added for this map area.
+                  {adminPropertyMode
+                    ? 'Click this object to create its property details.'
+                    : 'This map object is not available for reservation.'}
                 </p>
               </div>
             )}
