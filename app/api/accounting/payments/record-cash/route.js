@@ -10,6 +10,7 @@ import { roundMoney } from '@/lib/payments/paymentMath';
 import { canManageVillagePayments } from '@/lib/auth/canManageVillagePayments';
 import { hasPermission } from '@/lib/auth/rbac';
 import { logAuditEvent } from '@/lib/audit/logAuditEvent';
+import { createNotification } from '@/lib/notifications/createNotification';
 
 export const dynamic = 'force-dynamic';
 
@@ -188,11 +189,20 @@ export async function POST(request) {
 
   const customerId = plan.customer_id || plan.reservations?.customer_id;
   if (customerId) {
-    await admin.from('notifications').insert({
-      user_id: customerId,
+    await createNotification({
+      admin,
+      userId: customerId,
       title: 'Cash Payment Recorded',
       message: `Accounting recorded your cash payment of ${acceptedAmount.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}.`,
-      type: 'payment_verified'
+      type: 'payment_verified',
+      villageId: plan.village_id,
+      metadata: {
+        reservationId: plan.reservation_id,
+        paymentId: payment.id
+      },
+      actionUrl: '/customer/payments'
+    }).catch((notificationError) => {
+      console.error('[notification] Cash payment notification failed:', notificationError.message);
     });
   }
 

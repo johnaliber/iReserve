@@ -1,5 +1,6 @@
 import { requireApiPermission, canManageUser } from '@/lib/auth/rbac';
 import { logAuditEvent } from '@/lib/audit/logAuditEvent';
+import { createNotification } from '@/lib/notifications/createNotification';
 
 export const dynamic = 'force-dynamic';
 
@@ -111,6 +112,21 @@ export async function PATCH(request, { params }) {
     description: changedRole ? `Changed user role from ${before.role} to ${body.role}.` : changedStatus ? `Changed account status to ${body.status}.` : 'Updated user profile, access, or permissions.',
     metadata: { old_role: before.role, new_role: body.role || before.role, old_status: before.status, new_status: body.status || before.status }
   });
+
+  if (changedStatus) {
+    await createNotification({
+      admin,
+      userId,
+      title: body.status === 'active' ? 'Account Activated' : 'Account Status Updated',
+      message: body.status === 'active'
+        ? 'Your iReserve account is active and ready to use.'
+        : `Your iReserve account status was changed to ${body.status}. Contact support if you need assistance.`,
+      type: body.status === 'active' ? 'account_approved' : 'account_status_changed',
+      actionUrl: '/auth/login'
+    }).catch((notificationError) => {
+      console.error('[notification] Account status notification failed:', notificationError.message);
+    });
+  }
 
   return Response.json({ success: true });
 }

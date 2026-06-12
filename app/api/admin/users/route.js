@@ -1,5 +1,6 @@
 import { requireApiPermission, getUserVillageIds } from '@/lib/auth/rbac';
 import { logAuditEvent } from '@/lib/audit/logAuditEvent';
+import { createNotification } from '@/lib/notifications/createNotification';
 
 export const dynamic = 'force-dynamic';
 
@@ -102,6 +103,17 @@ export async function POST(request) {
     entityId: userId,
     description: `Created user ${fullName} with role ${role}.`,
     metadata: { email: email.trim().toLowerCase(), role, village_ids: villageIds }
+  });
+
+  await createNotification({
+    admin,
+    userId,
+    title: 'Welcome to iReserve',
+    message: `Your ${role.replaceAll('_', ' ')} account has been created and is ${status}.`,
+    type: 'account_created',
+    actionUrl: '/auth/login'
+  }).catch((notificationError) => {
+    console.error('[notification] Account creation notification failed:', notificationError.message);
   });
 
   return Response.json({ userId }, { status: 201 });

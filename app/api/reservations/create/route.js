@@ -10,6 +10,14 @@ import {
 import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
 import { logAuditEvent } from '@/lib/audit/logAuditEvent';
+import {
+  getAccountingRecipients,
+  getSuperAdminRecipients,
+  getVillageAdminRecipients
+} from '@/lib/email/getNotificationRecipients';
+import { sendEmail } from '@/lib/email/sendEmail';
+import { notificationEmail } from '@/lib/email/templates/notificationEmail';
+import { createNotification, createNotifications } from '@/lib/notifications/createNotification';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -274,7 +282,7 @@ export async function POST(request) {
       amount = validation.amount;
     }
 
-    const { error: paymentError } = await admin
+    const { data: payment, error: paymentError } = await admin
       .from('payments')
       .insert({
         reservation_id: reservation.id,
@@ -293,7 +301,9 @@ export async function POST(request) {
         excess_amount: 0,
         is_overpayment: false,
         created_at: new Date().toISOString()
-      });
+      })
+      .select()
+      .single();
 
     if (paymentError) throw paymentError;
 
@@ -352,6 +362,52 @@ export async function POST(request) {
         metadata: { document_types: docsPayload.map((document) => document.document_type) }
       })
     ]);
+
+    const customerMessage = `Reservation ${code} was created and is pending review. Your ${paymentPurpose.replaceAll('_', ' ')} payment of PHP ${amount.toLocaleString('en-PH')} is under review.`;
+    if (user) {
+      await createNotification({
+        admin,
+        userId: user.id,
+        title: 'Reservation Submitted',
+        message: customerMessage,
+        type: 'reservation_pending',
+        villageId: property.village_id,
+        metadata: { reservationId: reservation.id, paymentId: payment.id },
+        actionUrl: '/customer/reservations'
+      }).catch((notificationError) => {
+        console.error('[notification] Customer reservation notification failed:', notificationError.message);
+      });
+    } else {
+      const emailContent = notificationEmail({
+        title: 'Reservation Submitted',
+        message: customerMessage,
+        type: 'reservation_pending',
+        userName: fullName,
+        actionUrl: `/auth/register?email=${encodeURIComponent(email)}`
+      });
+      await sendEmail({
+        to: email,
+        subject: emailContent.subject,
+        html: emailContent.html,
+        text: emailContent.text
+      });
+    }
+
+    const [villageAdmins, accountingUsers, superAdmins] = await Promise.all([
+      getVillageAdminRecipients(admin, property.village_id),
+      getAccountingRecipients(admin),
+      getSuperAdminRecipients(admin)
+    ]);
+    await createNotifications({
+      admin,
+      recipients: [...villageAdmins, ...accountingUsers, ...superAdmins],
+      title: 'New Reservation Submitted',
+      message: `${fullName} submitted reservation ${code} with a ${paymentPurpose.replaceAll('_', ' ')} payment awaiting review.`,
+      type: 'reservation_created_admin',
+      villageId: property.village_id,
+      metadata: { reservationId: reservation.id, paymentId: payment.id },
+      actionUrl: '/village-admin/reservations'
+    });
 
     return json(200, { reservationCode: code, email, isGuest });
   } catch (err) {

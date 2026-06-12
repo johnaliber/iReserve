@@ -100,7 +100,7 @@ export default function AvailabilityCalendar({
               aria-label={`${date.toLocaleDateString('en-PH')} ${isAvailable ? 'available' : 'unavailable'}`}
               className={`relative mx-auto flex h-9 w-9 items-center justify-center rounded-xl text-sm transition ${
                 isSelected
-                  ? 'bg-[#111827] font-extrabold text-white shadow-sm'
+                  ? 'border border-emerald-400 bg-emerald-100 font-extrabold text-emerald-900 ring-2 ring-emerald-200'
                   : isAvailable
                     ? editable
                       ? 'bg-emerald-50 font-bold text-emerald-700 hover:bg-emerald-100'
@@ -125,7 +125,7 @@ export default function AvailabilityCalendar({
           Available
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-[#111827]" />
+          <span className="h-2 w-2 rounded-full border border-emerald-500 bg-emerald-100" />
           {editable ? 'Click to close' : 'Selected'}
         </span>
         <span className="flex items-center gap-1.5">

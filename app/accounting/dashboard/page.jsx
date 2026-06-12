@@ -290,7 +290,11 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
         throw new Error(payload.error || 'Customer notification failed.');
       }
 
-      alert('Customer notification sent.');
+      if (payload.email?.sent) {
+        alert('Customer notification and email sent.');
+      } else {
+        alert('In-app notification sent, but email delivery failed. Check the Gmail SMTP App Password configuration.');
+      }
     } catch (err) {
       alert(err.message || 'Customer notification failed.');
     } finally {

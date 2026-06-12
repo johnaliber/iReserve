@@ -89,41 +89,20 @@ export default function VillageAdminReservationsPage() {
     setActionMsg('');
     setActionErr('');
     try {
-      // 1. Update Reservation
-      const { error: resErr } = await supabase
-        .from('reservations')
-        .update({ 
-          status: newStatus,
-          approved_at: newStatus === 'approved' || newStatus === 'reserved' ? new Date().toISOString() : null,
-          cancelled_at: newStatus === 'cancelled' || newStatus === 'rejected' ? new Date().toISOString() : null
-        })
-        .eq('id', reservationId);
+      const response = await fetch('/api/village-admin/reservations/update-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reservationId, propertyId, status: newStatus })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Error processing reservation status.');
 
-      if (resErr) throw resErr;
-
-      // 2. Sync property table status
-      let propStatus = 'available';
-      if (newStatus === 'approved' || newStatus === 'reserved') {
-        propStatus = 'reserved';
-      } else if (newStatus === 'converted_to_sale') {
-        propStatus = 'sold';
-      }
-
-      const { error: propErr } = await supabase
-        .from('properties')
-        .update({ status: propStatus })
-        .eq('id', propertyId);
-
-      if (propErr) throw propErr;
-
-      // 3. Update payment status mapping if there's a payment record
-      const payStatus = newStatus === 'approved' || newStatus === 'reserved' ? 'verified' : 'rejected';
-      await supabase
-        .from('payments')
-        .update({ payment_status: payStatus })
-        .eq('reservation_id', reservationId);
-
-      setActionMsg(`Reservation successfully updated to ${newStatus.replace('_', ' ')}!`);
+      const deliveryNote = payload.emailSent
+        ? ' Customer notification and email sent.'
+        : payload.notificationCreated
+          ? ' Customer in-app notification sent.'
+          : '';
+      setActionMsg(`Reservation successfully updated to ${newStatus.replace('_', ' ')}.${deliveryNote}`);
       setTimeout(() => setActionMsg(''), 3000);
       
       // Refresh list
@@ -299,7 +278,7 @@ export default function VillageAdminReservationsPage() {
                           <span className="text-[10px] text-slate-500 block mt-0.5">{clientEmail}</span>
                         </td>
                         <td className="py-3.5 px-3 text-white">
-                          <span className="font-extrabold">₱{r.reservation_fee?.toLocaleString()}</span>
+                          <span className="font-extrabold">?{r.reservation_fee?.toLocaleString()}</span>
                           <span className="text-[10px] text-emerald-400 block font-normal flex items-center gap-0.5">
                             <ShieldCheck className="w-3 h-3" /> Manual upload verified
                           </span>

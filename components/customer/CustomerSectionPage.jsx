@@ -277,18 +277,18 @@ export default function CustomerSectionPage({ section }) {
 
       if (!user) throw new Error('Your session has expired. Please sign in again.');
 
-      const { error } = await supabase.from('site_viewings').insert({
-        village_id: reservation.village_id,
-        property_id: reservation.property_id,
-        reservation_id: reservation.id,
-        customer_id: user.id,
-        preferred_date: viewingForm.preferredDate,
-        preferred_time: viewingForm.preferredTime,
-        notes: viewingForm.notes.trim() || null,
-        status: 'pending'
+      const response = await fetch('/api/customer/site-viewings/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reservationId: reservation.id,
+          preferredDate: viewingForm.preferredDate,
+          preferredTime: viewingForm.preferredTime,
+          notes: viewingForm.notes.trim()
+        })
       });
-
-      if (error) throw error;
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'The site viewing request could not be submitted.');
 
       setShowViewingForm(false);
       setConfirmViewing(false);
@@ -564,7 +564,7 @@ export default function CustomerSectionPage({ section }) {
                               }}
                               className={`w-full rounded-xl border px-3 py-2.5 text-sm font-extrabold transition ${
                                 viewingForm.preferredTime === time
-                                  ? 'border-[#171717] bg-[#171717] text-white'
+                                  ? 'border-emerald-400 bg-emerald-50 text-emerald-900 ring-2 ring-emerald-100'
                                   : 'border-[#dbe4ee] bg-white text-[#272727] hover:border-emerald-300 hover:bg-emerald-50'
                               }`}
                             >

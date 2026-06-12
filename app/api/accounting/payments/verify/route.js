@@ -5,6 +5,7 @@ import { roundMoney } from '@/lib/payments/paymentMath';
 import { canManageVillagePayments } from '@/lib/auth/canManageVillagePayments';
 import { hasPermission } from '@/lib/auth/rbac';
 import { logAuditEvent } from '@/lib/audit/logAuditEvent';
+import { createNotification } from '@/lib/notifications/createNotification';
 
 export const dynamic = 'force-dynamic';
 
@@ -145,11 +146,24 @@ export async function POST(request) {
   });
 
   if (payment.customer_id) {
-    await admin.from('notifications').insert({
-      user_id: payment.customer_id,
-      title: 'Payment Verified',
-      message: `Your payment for Block ${payment.reservations?.properties?.block_number || '-'}, Lot ${payment.reservations?.properties?.lot_number || '-'} has been verified.`,
-      type: 'payment_verified'
+    const isFullyPaid = updatedPlan?.status === 'fully_paid';
+    const remainingBalance = Number(updatedPlan?.remaining_balance || 0);
+    await createNotification({
+      admin,
+      userId: payment.customer_id,
+      title: isFullyPaid ? 'Full Payment Completed' : 'Payment Verified',
+      message: isFullyPaid
+        ? `Your full payment for Block ${payment.reservations?.properties?.block_number || '-'}, Lot ${payment.reservations?.properties?.lot_number || '-'} has been completed.`
+        : `Your payment for Block ${payment.reservations?.properties?.block_number || '-'}, Lot ${payment.reservations?.properties?.lot_number || '-'} has been verified. Remaining balance: PHP ${remainingBalance.toLocaleString('en-PH')}.`,
+      type: isFullyPaid ? 'full_payment_completed' : 'payment_verified',
+      villageId: payment.village_id,
+      metadata: {
+        reservationId: payment.reservation_id,
+        paymentId: payment.id
+      },
+      actionUrl: '/customer/payments'
+    }).catch((notificationError) => {
+      console.error('[notification] Payment verification notification failed:', notificationError.message);
     });
   }
 

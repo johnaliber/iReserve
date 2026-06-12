@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CalendarDays, CheckCircle, Clock, Loader2, Users } from 'lucide-react';
+import { AlertTriangle, CalendarDays, Clock, Loader2, Users } from 'lucide-react';
 import DashboardShell from '@/components/layout/DashboardShell';
 import { createClient } from '@/lib/supabase/client';
 import { getManageableVillages } from '@/lib/villages/getManageableVillages';
@@ -14,11 +14,9 @@ function shortTime(value) {
 export default function SiteViewingAvailabilitySettings() {
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
-  const [savingDate, setSavingDate] = useState('');
   const [villages, setVillages] = useState([]);
   const [selectedVillageId, setSelectedVillageId] = useState('');
   const [availability, setAvailability] = useState([]);
-  const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [defaults, setDefaults] = useState({
     startTime: '08:00',
@@ -82,12 +80,14 @@ export default function SiteViewingAvailabilitySettings() {
   };
 
   const handleToggleDate = async (dateKey, isAvailable) => {
-    setMessage('');
     setError('');
-    setSavingDate(dateKey);
+    const existingItem = availability.find((item) => item.available_date === dateKey);
+    let optimisticItem = null;
 
     try {
       if (isAvailable) {
+        setAvailability((current) => current.filter((item) => item.available_date !== dateKey));
+
         const { error: deleteError } = await supabase
           .from('site_viewing_availability')
           .delete()
@@ -95,7 +95,6 @@ export default function SiteViewingAvailabilitySettings() {
           .eq('available_date', dateKey);
 
         if (deleteError) throw deleteError;
-        setMessage(`${dateKey} is now closed for site viewing.`);
       } else {
         if (defaults.startTime >= defaults.endTime) {
           throw new Error('The closing time must be later than the opening time.');
@@ -105,26 +104,45 @@ export default function SiteViewingAvailabilitySettings() {
           data: { user }
         } = await supabase.auth.getUser();
 
-        const { error: insertError } = await supabase
+        optimisticItem = {
+          id: `pending-${dateKey}`,
+          village_id: selectedVillageId,
+          available_date: dateKey,
+          start_time: defaults.startTime,
+          end_time: defaults.endTime,
+          daily_capacity: Number(defaults.dailyCapacity),
+          created_by: user?.id || null
+        };
+        setAvailability((current) => (
+          [...current, optimisticItem].sort((left, right) => left.available_date.localeCompare(right.available_date))
+        ));
+
+        const { data: created, error: insertError } = await supabase
           .from('site_viewing_availability')
           .insert({
-            village_id: selectedVillageId,
-            available_date: dateKey,
-            start_time: defaults.startTime,
-            end_time: defaults.endTime,
-            daily_capacity: Number(defaults.dailyCapacity),
-            created_by: user?.id || null
-          });
+            village_id: optimisticItem.village_id,
+            available_date: optimisticItem.available_date,
+            start_time: optimisticItem.start_time,
+            end_time: optimisticItem.end_time,
+            daily_capacity: optimisticItem.daily_capacity,
+            created_by: optimisticItem.created_by
+          })
+          .select()
+          .single();
 
         if (insertError) throw insertError;
-        setMessage(`${dateKey} is now open for site viewing.`);
+        setAvailability((current) => current.map((item) => (
+          item.id === optimisticItem.id ? created : item
+        )));
       }
-
-      await fetchAvailability(selectedVillageId);
     } catch (saveError) {
+      setAvailability((current) => {
+        const withoutDate = current.filter((item) => item.available_date !== dateKey);
+        return existingItem
+          ? [...withoutDate, existingItem].sort((left, right) => left.available_date.localeCompare(right.available_date))
+          : withoutDate;
+      });
       setError(saveError.message || 'The selected date could not be updated.');
-    } finally {
-      setSavingDate('');
     }
   };
 
@@ -167,12 +185,6 @@ export default function SiteViewingAvailabilitySettings() {
           </label>
         </div>
 
-        {message && (
-          <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-bold text-emerald-700">
-            <CheckCircle className="h-4 w-4" />
-            {message}
-          </div>
-        )}
         {error && (
           <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-700">
             <AlertTriangle className="h-4 w-4" />
@@ -181,7 +193,7 @@ export default function SiteViewingAvailabilitySettings() {
         )}
 
         <div className="grid gap-6 xl:grid-cols-[minmax(320px,480px)_1fr]">
-          <div className={savingDate ? 'pointer-events-none opacity-70' : ''}>
+          <div>
             <AvailabilityCalendar editable availableDates={availability} onToggle={handleToggleDate} />
             <p className="mt-3 text-xs leading-5 text-[#64748b]">
               Click an unavailable date to open it. Click a green date to close it.

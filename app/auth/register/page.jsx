@@ -15,6 +15,7 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const role = 'customer';
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -29,8 +30,18 @@ export default function RegisterPage() {
 
   const handleRegister = async (e) => {
     e.preventDefault();
-    if (!fullName || !email || !password) {
+    if (!fullName || !email || !password || !confirmPassword) {
       setError('Please fill in all required fields.');
+      return;
+    }
+
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
       return;
     }
 
@@ -171,12 +182,39 @@ export default function RegisterPage() {
                   <input
                     type="password"
                     required
+                    minLength={6}
+                    autoComplete="new-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Min. 6 characters"
                     className="w-full bg-slate-950/50 border border-slate-800 focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/30 rounded-xl py-2.5 pl-10 pr-4 text-slate-200 placeholder-slate-600 transition outline-none text-sm"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Confirm Password <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500 pointer-events-none">
+                    <Lock className="w-4 h-4" />
+                  </span>
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Enter your password again"
+                    aria-invalid={Boolean(confirmPassword && password !== confirmPassword)}
+                    className="w-full bg-slate-950/50 border border-slate-800 focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/30 rounded-xl py-2.5 pl-10 pr-4 text-slate-200 placeholder-slate-600 transition outline-none text-sm"
+                  />
+                </div>
+                {confirmPassword && password !== confirmPassword && (
+                  <p className="mt-1.5 text-xs font-semibold text-red-600">Passwords do not match.</p>
+                )}
               </div>
 
               <button

@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { canManageVillagePayments } from '@/lib/auth/canManageVillagePayments';
 import { hasPermission } from '@/lib/auth/rbac';
 import { logAuditEvent } from '@/lib/audit/logAuditEvent';
+import { createNotification } from '@/lib/notifications/createNotification';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,11 +86,20 @@ export async function POST(request) {
 
   const customerId = payment.customer_id || payment.reservations?.customer_id;
   if (customerId) {
-    await admin.from('notifications').insert({
-      user_id: customerId,
+    await createNotification({
+      admin,
+      userId: customerId,
       title: 'Payment Receipt Rejected',
       message: `Your payment for Block ${payment.reservations?.properties?.block_number || '-'}, Lot ${payment.reservations?.properties?.lot_number || '-'} was rejected. Reason: ${rejectionReason.trim()}`,
-      type: 'payment_rejected'
+      type: 'payment_rejected',
+      villageId: payment.village_id,
+      metadata: {
+        reservationId: payment.reservation_id,
+        paymentId: payment.id
+      },
+      actionUrl: '/customer/payments'
+    }).catch((notificationError) => {
+      console.error('[notification] Payment rejection notification failed:', notificationError.message);
     });
   }
 

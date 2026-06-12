@@ -470,6 +470,7 @@ ALTER TABLE public.site_viewings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.site_viewing_availability ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inquiries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.email_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.refunds ENABLE ROW LEVEL SECURITY;
 
@@ -619,6 +620,31 @@ CREATE POLICY payment_schedule_village_admin_all ON public.payment_schedule FOR 
 CREATE POLICY payment_schedule_customer_read ON public.payment_schedule FOR SELECT TO authenticated USING (
     EXISTS (SELECT 1 FROM public.payment_plans WHERE id = payment_plan_id AND customer_id = auth.uid())
 );
+
+-- ====================================================
+-- 13A. EMAIL LOGS TABLE
+-- ====================================================
+CREATE TABLE public.email_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    notification_id UUID REFERENCES public.notifications(id) ON DELETE CASCADE,
+    recipient_user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    recipient_email TEXT,
+    subject TEXT NOT NULL,
+    event_type TEXT NOT NULL DEFAULT 'notification',
+    status TEXT NOT NULL DEFAULT 'processing' CHECK (status IN ('processing', 'sent', 'failed', 'skipped')),
+    provider_message_id TEXT,
+    error_message TEXT,
+    village_id UUID REFERENCES public.villages(id) ON DELETE SET NULL,
+    reservation_id UUID REFERENCES public.reservations(id) ON DELETE SET NULL,
+    payment_id UUID REFERENCES public.payments(id) ON DELETE SET NULL,
+    site_viewing_id UUID REFERENCES public.site_viewings(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+CREATE UNIQUE INDEX email_logs_notification_recipient_unique
+    ON public.email_logs(notification_id, recipient_email)
+    WHERE notification_id IS NOT NULL AND recipient_email IS NOT NULL;
 
 -- --- payments POLICIES ---
 CREATE POLICY payments_super_admin ON public.payments FOR ALL TO authenticated USING (public.is_super_admin());

@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { canManageVillagePayments } from '@/lib/auth/canManageVillagePayments';
 import { hasPermission } from '@/lib/auth/rbac';
 import { logAuditEvent } from '@/lib/audit/logAuditEvent';
+import { createNotification } from '@/lib/notifications/createNotification';
 
 export const dynamic = 'force-dynamic';
 
@@ -102,13 +103,19 @@ export async function POST(request) {
   });
 
   if (document.customer_id) {
-    await admin.from('notifications').insert({
-      user_id: document.customer_id,
+    await createNotification({
+      admin,
+      userId: document.customer_id,
       title: status === 'approved' ? 'Document Approved' : 'Document Rejected',
       message: status === 'approved'
         ? `Your ${document.document_type} was approved.`
         : `Your ${document.document_type} was rejected. Reason: ${rejectionReason.trim()}`,
-      type: status === 'approved' ? 'document_approved' : 'document_rejected'
+      type: status === 'approved' ? 'document_approved' : 'document_rejected',
+      villageId,
+      metadata: { reservationId: document.reservation_id },
+      actionUrl: '/customer/documents'
+    }).catch((notificationError) => {
+      console.error('[notification] Document review notification failed:', notificationError.message);
     });
   }
 

@@ -67,7 +67,16 @@ SUPABASE_SERVICE_ROLE_KEY=your-supabase-private-service-role-key
 
 # Application Settings
 NEXT_PUBLIC_APP_URL=http://localhost:3000
+GMAIL_SMTP_USER=belledesk.info@gmail.com
+GMAIL_SMTP_HOST=smtp.gmail.com
+GMAIL_SMTP_PORT=465
+GMAIL_SMTP_SECURE=true
+GMAIL_SMTP_APP_PASSWORD=your_16_character_google_app_password
+GMAIL_SMTP_FROM_NAME=iReserve
+GMAIL_SMTP_REPLY_TO=belledesk.info@gmail.com
 ```
+
+Gmail SMTP requires 2-Step Verification and a Google App Password. Do not use the normal Gmail account password. Email delivery is skipped safely when these values are missing, while in-app and real-time notifications continue normally.
 
 ---
 

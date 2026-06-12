@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { formatPeso } from '@/lib/payments/paymentMath';
 import { canManageVillagePayments } from '@/lib/auth/canManageVillagePayments';
+import { createNotification } from '@/lib/notifications/createNotification';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,16 +69,16 @@ export async function POST(request) {
       ? `Your reservation fee for ${propertyLabel} is recorded. Your remaining full-payment balance is ${amount}.`
       : `Your account for ${propertyLabel} has an upcoming payment due. Please prepare your balance payment. Remaining balance: ${amount}.`;
 
-  const { error: notificationError } = await admin.from('notifications').insert({
-    user_id: plan.customer_id,
+  const result = await createNotification({
+    admin,
+    userId: plan.customer_id,
     title,
     message,
-    type: messageType
+    type: messageType,
+    villageId: plan.village_id,
+    metadata: { reservationId: plan.reservation_id },
+    actionUrl: '/customer/payments'
   });
-
-  if (notificationError) {
-    return json(400, { error: notificationError.message });
-  }
 
   await admin.from('audit_logs').insert({
     user_id: user.id,
@@ -88,5 +89,13 @@ export async function POST(request) {
     metadata: { messageType, customer_id: plan.customer_id }
   });
 
-  return json(200, { ok: true });
+  return json(200, {
+    ok: true,
+    notificationId: result.notification.id,
+    email: {
+      sent: Boolean(result.email?.success),
+      skipped: Boolean(result.email?.skipped),
+      reason: result.email?.reason || result.email?.error || null
+    }
+  });
 }

@@ -89,16 +89,22 @@ export default function VillageAdminSiteViewingsPage() {
     setActionMsg('');
     setActionErr('');
     try {
-      const { error } = await supabase
-        .from('site_viewings')
-        .update({ status: newStatus })
-        .eq('id', viewingId);
+      const response = await fetch('/api/village-admin/site-viewings/update-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ viewingId, status: newStatus })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Error updating viewing schedule.');
 
-      if (error) throw error;
-
-      setActionMsg(`Site viewing appointment successfully ${newStatus}!`);
+      const deliveryNote = payload.emailSent
+        ? ' Customer notification and email sent.'
+        : payload.notificationCreated
+          ? ' In-app notification sent; email delivery was not completed.'
+          : '';
+      setActionMsg(`Site viewing appointment successfully ${newStatus}.${deliveryNote}`);
       setTimeout(() => setActionMsg(''), 3000);
-      fetchViewings(selectedVillageId);
+      await fetchViewings(selectedVillageId);
     } catch (err) {
       setActionErr(err.message || 'Error updating viewing schedule.');
       setTimeout(() => setActionErr(''), 4000);

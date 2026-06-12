@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createFallbackPaymentSchedule, validatePaymentAmount } from '@/lib/payments/server';
+import { getAccountingRecipients, getSuperAdminRecipients } from '@/lib/email/getNotificationRecipients';
+import { createNotification, createNotifications } from '@/lib/notifications/createNotification';
 
 export const dynamic = 'force-dynamic';
 
@@ -141,6 +143,34 @@ export async function POST(request) {
   if (paymentError) {
     return json(400, { error: paymentError.message });
   }
+
+  await createNotification({
+    admin,
+    userId: user.id,
+    title: 'Payment Under Review',
+    message: `Your payment of PHP ${Number(acceptedAmount).toLocaleString('en-PH')} for reservation ${plan.reservations?.reservation_code || ''} was submitted and is waiting for Accounting verification.`,
+    type: 'payment_under_review',
+    villageId: plan.village_id,
+    metadata: { reservationId: plan.reservation_id, paymentId: payment.id },
+    actionUrl: '/customer/payments'
+  }).catch((notificationError) => {
+    console.error('[notification] Customer payment submission notification failed:', notificationError.message);
+  });
+
+  const [accountingUsers, superAdmins] = await Promise.all([
+    getAccountingRecipients(admin),
+    getSuperAdminRecipients(admin)
+  ]);
+  await createNotifications({
+    admin,
+    recipients: [...accountingUsers, ...superAdmins],
+    title: 'New Payment Proof Submitted',
+    message: `A payment of PHP ${Number(acceptedAmount).toLocaleString('en-PH')} for reservation ${plan.reservations?.reservation_code || ''} is ready for review.`,
+    type: 'payment_uploaded_admin',
+    villageId: plan.village_id,
+    metadata: { reservationId: plan.reservation_id, paymentId: payment.id },
+    actionUrl: '/accounting/ledger/receipts'
+  });
 
   return json(200, { payment });
 }

@@ -561,18 +561,15 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
       // First save draft state
       await handleSaveDraft();
 
-      // Update blueprint status to 'published' and set published_at timestamp
-      const { error: publishError } = await supabase
-        .from('blueprints')
-        .update({
-          status: 'published',
-          published_at: new Date().toISOString()
-        })
-        .eq('id', blueprintId);
+      const response = await fetch('/api/architect/blueprints/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blueprintId })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'The blueprint could not be published.');
 
-      if (publishError) throw publishError;
-
-      setBlueprint((prev) => prev ? { ...prev, status: 'published', published_at: new Date().toISOString() } : prev);
+      setBlueprint((prev) => prev ? { ...prev, ...payload.blueprint } : payload.blueprint);
       setSaveStatus('published');
       setTimeout(() => setSaveStatus(''), 3000);
     } catch (err) {

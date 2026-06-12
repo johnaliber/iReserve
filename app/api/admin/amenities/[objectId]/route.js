@@ -1,5 +1,7 @@
 import { getAuthContext } from '@/lib/auth/rbac';
 import { isAmenityObject } from '@/lib/blueprints/amenities';
+import { getArchitectRecipients, getSuperAdminRecipients } from '@/lib/email/getNotificationRecipients';
+import { createNotifications } from '@/lib/notifications/createNotification';
 
 export const dynamic = 'force-dynamic';
 
@@ -119,6 +121,20 @@ export async function PATCH(request, { params }) {
   if (updateError || !savedObject) {
     return json(400, { error: updateError?.message || 'Amenity details could not be saved.' });
   }
+
+  const [architects, superAdmins] = await Promise.all([
+    getArchitectRecipients(result.admin, villageId),
+    getSuperAdminRecipients(result.admin)
+  ]);
+  await createNotifications({
+    admin: result.admin,
+    recipients: [...architects, ...superAdmins].filter((recipient) => recipient.id !== result.user.id),
+    title: 'Amenity Details Updated',
+    message: `${objectData.displayLabel || objectData.name || 'An amenity'} was updated for the public village map.`,
+    type: 'amenity_updated',
+    villageId,
+    actionUrl: '/architect/dashboard'
+  });
 
   return json(200, { object: savedObject });
 }
