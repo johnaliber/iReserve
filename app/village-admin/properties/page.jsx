@@ -20,7 +20,9 @@ import {
   Plus,
   Save,
   LayoutGrid,
-  List
+  List,
+  UploadCloud,
+  X
 } from 'lucide-react';
 import Pagination from '@/components/shared/Pagination';
 
@@ -41,8 +43,20 @@ const EMPTY_PRESET = {
   bathrooms: '0',
   parking_slots: '0',
   flood_risk: 'low',
-  sunlight_exposure: 'balanced'
+  sunlight_exposure: 'balanced',
+  thumbnail_url: '',
+  floor_plan_url: ''
 };
+
+const acceptedImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
+const presetInputClass = 'w-full rounded-lg border border-[#dbe4ee] bg-white px-3 py-2 text-sm text-[#272727] shadow-sm outline-none transition placeholder:text-[#94a3b8] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15';
+
+function buildStorageFileName(fileName) {
+  return fileName
+    .replace(/[^a-z0-9._-]/gi, '-')
+    .replace(/-+/g, '-')
+    .toLowerCase();
+}
 
 function MiniField({ label, children }) {
   return (
@@ -69,6 +83,7 @@ export default function VillageAdminPropertiesPage() {
   const [presetForm, setPresetForm] = useState(EMPTY_PRESET);
   const [editingPresetId, setEditingPresetId] = useState('');
   const [savingPreset, setSavingPreset] = useState(false);
+  const [uploadingPresetField, setUploadingPresetField] = useState('');
   const [presetViewMode, setPresetViewMode] = useState('grid');
   
   // Search and Filter State
@@ -176,12 +191,64 @@ export default function VillageAdminPropertiesPage() {
       bathrooms: preset.bathrooms?.toString() || '0',
       parking_slots: preset.parking_slots?.toString() || '0',
       flood_risk: preset.flood_risk || 'low',
-      sunlight_exposure: preset.sunlight_exposure || 'balanced'
+      sunlight_exposure: preset.sunlight_exposure || 'balanced',
+      thumbnail_url: preset.thumbnail_url || '',
+      floor_plan_url: preset.floor_plan_url || ''
     });
     setEditingPresetId(preset.id);
     setShowPresetForm(true);
     setMessage('');
     setError('');
+  };
+
+  const closePresetDrawer = () => {
+    if (savingPreset || uploadingPresetField) return;
+    setShowPresetForm(false);
+    setPresetForm(EMPTY_PRESET);
+    setEditingPresetId('');
+    setError('');
+  };
+
+  const handlePresetMediaUpload = async (field, file) => {
+    if (!file) return;
+
+    if (!acceptedImageTypes.includes(file.type)) {
+      setError('Please upload a JPG, PNG, or WebP image.');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Image upload limit is 10MB.');
+      return;
+    }
+
+    setUploadingPresetField(field);
+    setError('');
+
+    try {
+      const safeName = buildStorageFileName(file.name);
+      const presetKey = editingPresetId || 'new-configuration';
+      const uploadId = crypto.randomUUID();
+      const storagePath = `property-presets/${selectedVillageId}/${presetKey}/${uploadId}-${safeName}`;
+      const { error: uploadError } = await supabase.storage
+        .from('blueprint-assets')
+        .upload(storagePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from('blueprint-assets')
+        .getPublicUrl(storagePath);
+
+      updatePresetField(field, data.publicUrl);
+    } catch (err) {
+      setError(err.message || 'Image could not be uploaded.');
+    } finally {
+      setUploadingPresetField('');
+    }
   };
 
   const handleSavePreset = async () => {
@@ -241,6 +308,8 @@ export default function VillageAdminPropertiesPage() {
           parking_slots: payload.parking_slots,
           flood_risk: payload.flood_risk,
           sunlight_exposure: payload.sunlight_exposure,
+          thumbnail_url: payload.thumbnail_url || null,
+          floor_plan_url: payload.floor_plan_url || null,
           updated_at: new Date().toISOString()
         };
 
@@ -498,99 +567,6 @@ export default function VillageAdminPropertiesPage() {
               </button>
             </div>
           </div>
-
-          {showPresetForm && (
-            <div className="mt-4 rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-4">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <h3 className="text-sm font-extrabold text-slate-900">
-                  {editingPresetId ? 'Edit Lot / House Configuration' : 'New Lot / House Configuration'}
-                </h3>
-                {editingPresetId && (
-                  <button
-                    type="button"
-                    onClick={handleNewPreset}
-                    className="rounded-lg border border-[#cbd5e1] bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-[#f1f5f9]"
-                  >
-                    Cancel Edit
-                  </button>
-                )}
-              </div>
-              {/* Identity Fields */}
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 mt-1">Identity</p>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-                <MiniField label="Configuration Name">
-                  <input className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="e.g. Verdant 50sqm" value={presetForm.name} onChange={(e) => updatePresetField('name', e.target.value)} />
-                </MiniField>
-                <MiniField label="Property Type">
-                  <select className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" value={presetForm.property_type} onChange={(e) => updatePresetField('property_type', e.target.value)}>
-                    <option value="lot">Lot</option>
-                    <option value="house_and_lot">House and Lot</option>
-                    <option value="townhouse">Townhouse</option>
-                    <option value="duplex">Duplex</option>
-                    <option value="commercial_lot">Commercial Lot</option>
-                  </select>
-                </MiniField>
-                <MiniField label="Model Name">
-                  <input className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="e.g. Verdant" value={presetForm.model_name} onChange={(e) => updatePresetField('model_name', e.target.value)} />
-                </MiniField>
-                <MiniField label="Price">
-                  <input type="number" min="0" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="3000000" value={presetForm.price} onChange={(e) => updatePresetField('price', e.target.value)} />
-                </MiniField>
-              </div>
-
-              {/* Pricing & Financing Fields */}
-              <div className="mt-4 border-t border-[#e2e8f0] pt-3">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Pricing & Financing</p>
-              </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-                <MiniField label="Reservation Fee">
-                  <input type="number" min="0" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="5000" value={presetForm.reservation_fee} onChange={(e) => updatePresetField('reservation_fee', e.target.value)} />
-                </MiniField>
-                <MiniField label="Interest Rate (%)">
-                  <input type="number" min="0" step="0.01" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="0" value={presetForm.interest_rate} onChange={(e) => updatePresetField('interest_rate', e.target.value)} />
-                </MiniField>
-                <MiniField label="Downpayment (%)">
-                  <input type="number" min="0" max="100" step="0.01" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="20" value={presetForm.downpayment_percentage} onChange={(e) => updatePresetField('downpayment_percentage', e.target.value)} />
-                </MiniField>
-                <MiniField label="Default Loan Term (years)">
-                  <input type="number" min="1" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="15" value={presetForm.default_loan_term_years} onChange={(e) => updatePresetField('default_loan_term_years', e.target.value)} />
-                </MiniField>
-              </div>
-
-              {/* Property Specs Fields */}
-              <div className="mt-4 border-t border-[#e2e8f0] pt-3">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Property Specifications</p>
-              </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-                <MiniField label="Lot Size (sqm)">
-                  <input type="number" min="0" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="50" value={presetForm.lot_size} onChange={(e) => updatePresetField('lot_size', e.target.value)} />
-                </MiniField>
-                <MiniField label="Floor Area (sqm)">
-                  <input type="number" min="0" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="50" value={presetForm.floor_area} onChange={(e) => updatePresetField('floor_area', e.target.value)} />
-                </MiniField>
-                <MiniField label="Bedrooms">
-                  <input type="number" min="0" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="1" value={presetForm.bedrooms} onChange={(e) => updatePresetField('bedrooms', e.target.value)} />
-                </MiniField>
-                <MiniField label="Bathrooms">
-                  <input type="number" min="0" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="1" value={presetForm.bathrooms} onChange={(e) => updatePresetField('bathrooms', e.target.value)} />
-                </MiniField>
-                <MiniField label="Parking Slots">
-                  <input type="number" min="0" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" placeholder="1" value={presetForm.parking_slots} onChange={(e) => updatePresetField('parking_slots', e.target.value)} />
-                </MiniField>
-              </div>
-              <div className="mt-4 flex justify-end">
-                <button
-                  type="button"
-                  onClick={handleSavePreset}
-                  disabled={savingPreset}
-                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-extrabold text-white transition hover:bg-emerald-500 disabled:opacity-60"
-                >
-                  {savingPreset ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  {editingPresetId ? 'Update Configuration' : 'Save Configuration'}
-                </button>
-              </div>
-            </div>
-          )}
 
           {presetViewMode === 'list' && presets.length > 0 ? (
             <div className="mt-5 overflow-x-auto rounded-xl border border-[#dbe4ee] bg-white">
@@ -939,6 +915,196 @@ export default function VillageAdminPropertiesPage() {
         </div>
 
       </div>
+
+      {showPresetForm && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/35 backdrop-blur-[1px]" role="presentation">
+          <button
+            type="button"
+            aria-label="Close configuration drawer"
+            className="absolute inset-0 cursor-default"
+            onClick={closePresetDrawer}
+          />
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="configuration-drawer-title"
+            className="relative flex h-full w-full flex-col bg-white shadow-2xl sm:max-w-2xl"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-[#e2e8f0] px-4 py-4 sm:px-5">
+              <div>
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-emerald-700">
+                  Property Inventory
+                </p>
+                <h2 id="configuration-drawer-title" className="mt-1 text-lg font-extrabold text-slate-900">
+                  {editingPresetId ? 'Edit Lot / House Configuration' : 'New Lot / House Configuration'}
+                </h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  Configure reusable property details, thumbnail, and floor plan.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closePresetDrawer}
+                disabled={savingPreset || Boolean(uploadingPresetField)}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#dbe4ee] bg-white text-[#64748b] transition hover:bg-[#f8fafc] disabled:opacity-50"
+                aria-label="Close configuration drawer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto bg-[#f8fafc] p-3 sm:p-4">
+              {error && (
+                <div className="mb-5 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <section className="rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm">
+                  <h3 className="text-sm font-extrabold text-[#272727]">Identity</h3>
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <MiniField label="Configuration Name">
+                      <input className={presetInputClass} placeholder="e.g. Verdant 50sqm" value={presetForm.name} onChange={(e) => updatePresetField('name', e.target.value)} />
+                    </MiniField>
+                    <MiniField label="Property Type">
+                      <select className={presetInputClass} value={presetForm.property_type} onChange={(e) => updatePresetField('property_type', e.target.value)}>
+                        <option value="lot">Lot</option>
+                        <option value="house_and_lot">House and Lot</option>
+                        <option value="townhouse">Townhouse</option>
+                        <option value="duplex">Duplex</option>
+                        <option value="commercial_lot">Commercial Lot</option>
+                      </select>
+                    </MiniField>
+                    <MiniField label="Model Name">
+                      <input className={presetInputClass} placeholder="e.g. Verdant" value={presetForm.model_name} onChange={(e) => updatePresetField('model_name', e.target.value)} />
+                    </MiniField>
+                    <MiniField label="Price">
+                      <input type="number" min="0" className={presetInputClass} placeholder="3000000" value={presetForm.price} onChange={(e) => updatePresetField('price', e.target.value)} />
+                    </MiniField>
+                  </div>
+                </section>
+
+                <section className="rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm">
+                  <h3 className="text-sm font-extrabold text-[#272727]">Pricing & Financing</h3>
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <MiniField label="Reservation Fee">
+                      <input type="number" min="0" className={presetInputClass} value={presetForm.reservation_fee} onChange={(e) => updatePresetField('reservation_fee', e.target.value)} />
+                    </MiniField>
+                    <MiniField label="Interest Rate (%)">
+                      <input type="number" min="0" step="0.01" className={presetInputClass} value={presetForm.interest_rate} onChange={(e) => updatePresetField('interest_rate', e.target.value)} />
+                    </MiniField>
+                    <MiniField label="Downpayment (%)">
+                      <input type="number" min="0" max="100" step="0.01" className={presetInputClass} value={presetForm.downpayment_percentage} onChange={(e) => updatePresetField('downpayment_percentage', e.target.value)} />
+                    </MiniField>
+                    <MiniField label="Default Loan Term (years)">
+                      <input type="number" min="1" className={presetInputClass} value={presetForm.default_loan_term_years} onChange={(e) => updatePresetField('default_loan_term_years', e.target.value)} />
+                    </MiniField>
+                  </div>
+                </section>
+
+                <section className="rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm">
+                  <h3 className="text-sm font-extrabold text-[#272727]">Property Specifications</h3>
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <MiniField label="Lot Size (sqm)">
+                      <input type="number" min="0" className={presetInputClass} value={presetForm.lot_size} onChange={(e) => updatePresetField('lot_size', e.target.value)} />
+                    </MiniField>
+                    <MiniField label="Floor Area (sqm)">
+                      <input type="number" min="0" className={presetInputClass} value={presetForm.floor_area} onChange={(e) => updatePresetField('floor_area', e.target.value)} />
+                    </MiniField>
+                    <MiniField label="Bedrooms">
+                      <input type="number" min="0" className={presetInputClass} value={presetForm.bedrooms} onChange={(e) => updatePresetField('bedrooms', e.target.value)} />
+                    </MiniField>
+                    <MiniField label="Bathrooms">
+                      <input type="number" min="0" className={presetInputClass} value={presetForm.bathrooms} onChange={(e) => updatePresetField('bathrooms', e.target.value)} />
+                    </MiniField>
+                    <MiniField label="Parking Slots">
+                      <input type="number" min="0" className={presetInputClass} value={presetForm.parking_slots} onChange={(e) => updatePresetField('parking_slots', e.target.value)} />
+                    </MiniField>
+                  </div>
+                </section>
+
+                <section className="rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm">
+                  <h3 className="text-sm font-extrabold text-[#272727]">Property Media</h3>
+                  <p className="mt-1 text-xs font-semibold text-[#64748b]">
+                    These images are applied when this configuration is selected for a property.
+                  </p>
+                  <div className="mt-3 space-y-3">
+                    {[
+                      { field: 'thumbnail_url', label: 'Property Thumbnail', emptyText: 'Upload a property thumbnail' },
+                      { field: 'floor_plan_url', label: 'Floor Plan', emptyText: 'Upload a floor plan image' }
+                    ].map((media) => (
+                      <div key={media.field} className="rounded-lg border border-[#dbe4ee] bg-white p-3">
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-[#64748b]">{media.label}</p>
+                        {presetForm[media.field] && (
+                          <a
+                            href={presetForm[media.field]}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-3 block overflow-hidden rounded-lg border border-[#e2e8f0] bg-[#f8fafc]"
+                          >
+                            <div
+                              role="img"
+                              aria-label={`${media.label} preview`}
+                              className="h-36 w-full bg-contain bg-center bg-no-repeat"
+                              style={{ backgroundImage: `url("${presetForm[media.field]}")` }}
+                            />
+                          </a>
+                        )}
+                        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-bold text-[#272727]">
+                              {presetForm[media.field] ? `${media.label} uploaded` : media.emptyText}
+                            </p>
+                            <p className="mt-1 text-xs text-[#64748b]">JPG, PNG, or WebP up to 10MB.</p>
+                          </div>
+                          <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-emerald-500">
+                            {uploadingPresetField === media.field ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                            {uploadingPresetField === media.field ? 'Uploading...' : 'Upload Image'}
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              className="hidden"
+                              disabled={Boolean(uploadingPresetField)}
+                              onChange={(e) => handlePresetMediaUpload(media.field, e.target.files?.[0])}
+                            />
+                          </label>
+                        </div>
+                        {presetForm[media.field] && (
+                          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                            <a href={presetForm[media.field]} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate rounded-lg border border-[#dbe4ee] bg-white px-3 py-2 text-xs font-bold text-emerald-700 transition hover:bg-emerald-50">
+                              View uploaded {media.label.toLowerCase()}
+                            </a>
+                            <button type="button" onClick={() => updatePresetField(media.field, '')} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-600 transition hover:bg-rose-50">
+                              Remove
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-[#e2e8f0] bg-white/95 px-5 py-3 backdrop-blur sm:flex-row sm:justify-end">
+              <button type="button" onClick={closePresetDrawer} disabled={savingPreset || Boolean(uploadingPresetField)} className="rounded-lg border border-[#e2e8f0] bg-white px-4 py-2 text-sm font-bold text-[#272727] transition hover:bg-[#f8fafc] disabled:opacity-50">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSavePreset}
+                disabled={savingPreset || Boolean(uploadingPresetField)}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-extrabold text-white transition hover:bg-emerald-500 disabled:opacity-60"
+              >
+                {savingPreset ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                {editingPresetId ? 'Update Configuration' : 'Save Configuration'}
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
     </DashboardShell>
   );
 }

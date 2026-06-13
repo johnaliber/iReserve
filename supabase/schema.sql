@@ -146,6 +146,8 @@ CREATE TABLE public.property_type_presets (
     orientation TEXT,
     flood_risk TEXT NOT NULL DEFAULT 'low' CHECK (flood_risk IN ('low', 'medium', 'high')),
     sunlight_exposure TEXT NOT NULL DEFAULT 'balanced' CHECK (sunlight_exposure IN ('morning', 'afternoon', 'balanced', 'limited')),
+    thumbnail_url TEXT,
+    floor_plan_url TEXT,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,

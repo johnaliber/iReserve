@@ -138,10 +138,7 @@ export default async function VillageLandingPage({ params }) {
             Back to Home
           </Link>
 
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold mb-4 select-none">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Lots Available to Explore</span>
-          </div>
+          
 
           <div className="flex items-center gap-1.5 text-slate-400 text-sm mb-2">
             <MapPin className="w-4 h-4 text-emerald-400" />
@@ -209,18 +206,10 @@ export default async function VillageLandingPage({ params }) {
             <div className="space-y-4">
               <Link
                 href={`/villages/${selectedVillage.slug}/map`}
-                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-bold py-3.5 px-4 rounded-xl transition shadow-lg shadow-emerald-500/15 text-sm cursor-pointer"
-              >
-                <Map className="w-4 h-4" />
-                View Interactive Map
-              </Link>
-
-              <Link
-                href={`/villages/${selectedVillage.slug}/map?view=recommendation`}
                 className="w-full flex items-center justify-center gap-2 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-200 font-semibold py-3 px-4 rounded-xl transition text-sm cursor-pointer"
               >
-                <Layers className="w-4 h-4 text-emerald-400" />
-                Browse Available Lots
+                <Map className="w-4 h-4 text-emerald-400" />
+                View Interactive Map
               </Link>
             </div>
 
@@ -262,18 +251,6 @@ export default async function VillageLandingPage({ params }) {
           </div>
         </section>
       )}
-
-      <section className="mx-auto w-full max-w-7xl px-4 pb-12">
-        <div className="rounded-2xl border border-[#e2e8f0] bg-white p-6 shadow-sm">
-          <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-600">Location</p>
-          <h2 className="mt-1 text-xl font-extrabold text-[#272727]">{selectedVillage.address}</h2>
-          <p className="mt-1 text-sm text-[#64748b]">{selectedVillage.city}, {selectedVillage.province}</p>
-          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-            <Link href={`/villages/${selectedVillage.slug}/map`} className="inline-flex min-h-12 items-center justify-center rounded-xl bg-emerald-600 px-5 text-sm font-extrabold text-white">View Available Lots</Link>
-            <Link href="/customer/site-viewing" className="inline-flex min-h-12 items-center justify-center rounded-xl border border-[#dbe4ee] bg-white px-5 text-sm font-extrabold text-[#272727]">Schedule Site Viewing</Link>
-          </div>
-        </div>
-      </section>
 
       {isRealVillage && (
         <section className="mx-auto w-full max-w-4xl px-4 pb-12">

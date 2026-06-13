@@ -55,7 +55,7 @@ const superAdminNav = [
   { title: 'Reports', href: '/village-admin/reports', icon: BarChart3 },
   { title: 'Blueprints', href: '/architect/dashboard', icon: PencilRuler },
   { title: 'Audit Logs', href: '/super-admin/audit-logs', icon: FileClock },
-  { title: 'Settings', href: '/super-admin/settings', icon: Settings }
+  // { title: 'Settings', href: '/super-admin/settings', icon: Settings }
 ];
 
 const villageAdminNav = [

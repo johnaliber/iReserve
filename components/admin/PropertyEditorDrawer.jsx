@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Loader2, RefreshCw, Save, Trash2, Unlink, UploadCloud, X } from 'lucide-react';
+import { AlertCircle, Loader2, RefreshCw, Save, Trash2, Unlink, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { generatePropertyCode } from '@/lib/properties/numbering';
 
@@ -96,15 +96,6 @@ function Field({ label, required, children }) {
 const inputClass = 'w-full rounded-lg border border-[#dbe4ee] bg-white px-3 py-2 text-sm text-[#272727] shadow-sm outline-none transition placeholder:text-[#94a3b8] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15';
 const lockedInputClass = `${inputClass} cursor-not-allowed bg-[#f8fafc] text-[#64748b]`;
 const sectionClass = 'rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm';
-const acceptedImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
-
-function buildStorageFileName(fileName) {
-  return fileName
-    .replace(/[^a-z0-9._-]/gi, '-')
-    .replace(/-+/g, '-')
-    .toLowerCase();
-}
-
 export default function PropertyEditorDrawer({
   open,
   villageId,
@@ -124,7 +115,6 @@ export default function PropertyEditorDrawer({
   const [error, setError] = useState('');
   const [presets, setPresets] = useState([]);
   const [selectedPresetId, setSelectedPresetId] = useState('');
-  const [uploadingField, setUploadingField] = useState('');
 
   const isLinked = Boolean(property?.id);
   const title = isLinked ? 'Edit Property Details' : 'Create Property Details';
@@ -195,48 +185,6 @@ export default function PropertyEditorDrawer({
     });
   };
 
-  const handleMediaUpload = async (field, file) => {
-    if (!file) return;
-
-    if (!acceptedImageTypes.includes(file.type)) {
-      setError('Please upload a JPG, PNG, or WebP image.');
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      setError('Image upload limit is 10MB.');
-      return;
-    }
-
-    setUploadingField(field);
-    setError('');
-
-    try {
-      const ownerId = property?.id || blueprintObject?.id || 'new-property';
-      const safeName = buildStorageFileName(file.name);
-      const storagePath = `properties/${villageId || 'unassigned'}/${ownerId}/${Date.now()}-${safeName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('blueprint-assets')
-        .upload(storagePath, file, {
-          cacheControl: '3600',
-          upsert: false
-        });
-
-      if (uploadError) throw uploadError;
-
-      const { data } = supabase.storage
-        .from('blueprint-assets')
-        .getPublicUrl(storagePath);
-
-      updateField(field, data.publicUrl);
-    } catch (err) {
-      setError(err.message || 'Image could not be uploaded.');
-    } finally {
-      setUploadingField('');
-    }
-  };
-
   const applyPreset = (presetId) => {
     setSelectedPresetId(presetId);
     const preset = presets.find((item) => item.id === presetId);
@@ -258,7 +206,9 @@ export default function PropertyEditorDrawer({
       bathrooms: preset.bathrooms?.toString() || '0',
       parking_slots: preset.parking_slots?.toString() || '0',
       flood_risk: preset.flood_risk || current.flood_risk,
-      sunlight_exposure: preset.sunlight_exposure || current.sunlight_exposure
+      sunlight_exposure: preset.sunlight_exposure || current.sunlight_exposure,
+      thumbnail_url: preset.thumbnail_url || '',
+      floor_plan_url: preset.floor_plan_url || ''
     }));
   };
 
@@ -568,78 +518,6 @@ export default function PropertyEditorDrawer({
                   <input className={inputClass} value={form.maintenance_reason} onChange={(e) => updateField('maintenance_reason', e.target.value)} />
                 </Field>
               )}
-            </div>
-          </section>
-
-          <section className={sectionClass}>
-            <h3 className="text-sm font-extrabold text-[#272727]">Images & Media</h3>
-            <div className="mt-4 space-y-4">
-              <Field label="Thumbnail Image">
-                <div className="rounded-xl border border-dashed border-[#cbd5e1] bg-[#f8fafc] p-3">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-sm font-bold text-[#272727]">
-                        {form.thumbnail_url ? 'Thumbnail image uploaded' : 'Upload a property thumbnail'}
-                      </p>
-                      <p className="mt-1 text-xs text-[#64748b]">Accepted: JPG, PNG, or WebP up to 10MB.</p>
-                    </div>
-                    <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-extrabold text-white shadow transition hover:bg-emerald-500">
-                      {uploadingField === 'thumbnail_url' ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-                      {uploadingField === 'thumbnail_url' ? 'Uploading...' : 'Upload Image'}
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        className="hidden"
-                        disabled={uploadingField === 'thumbnail_url'}
-                        onChange={(e) => handleMediaUpload('thumbnail_url', e.target.files?.[0])}
-                      />
-                    </label>
-                  </div>
-                  {form.thumbnail_url && (
-                    <a
-                      href={form.thumbnail_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-3 block truncate rounded-lg border border-[#dbe4ee] bg-white px-3 py-2 text-xs font-semibold text-emerald-700 hover:text-emerald-600"
-                    >
-                      View uploaded thumbnail
-                    </a>
-                  )}
-                </div>
-              </Field>
-              <Field label="Floor Plan Image">
-                <div className="rounded-xl border border-dashed border-[#cbd5e1] bg-[#f8fafc] p-3">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-sm font-bold text-[#272727]">
-                        {form.floor_plan_url ? 'Floor plan image uploaded' : 'Upload a floor plan image'}
-                      </p>
-                      <p className="mt-1 text-xs text-[#64748b]">Accepted: JPG, PNG, or WebP up to 10MB.</p>
-                    </div>
-                    <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-extrabold text-white shadow transition hover:bg-emerald-500">
-                      {uploadingField === 'floor_plan_url' ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-                      {uploadingField === 'floor_plan_url' ? 'Uploading...' : 'Upload Image'}
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        className="hidden"
-                        disabled={uploadingField === 'floor_plan_url'}
-                        onChange={(e) => handleMediaUpload('floor_plan_url', e.target.files?.[0])}
-                      />
-                    </label>
-                  </div>
-                  {form.floor_plan_url && (
-                    <a
-                      href={form.floor_plan_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-3 block truncate rounded-lg border border-[#dbe4ee] bg-white px-3 py-2 text-xs font-semibold text-emerald-700 hover:text-emerald-600"
-                    >
-                      View uploaded floor plan
-                    </a>
-                  )}
-                </div>
-              </Field>
             </div>
           </section>
 
