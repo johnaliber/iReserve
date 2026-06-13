@@ -8,6 +8,9 @@ export default function VillageCarousel({ villages = [] }) {
   const railRef = useRef(null);
   const pausedRef = useRef(false);
   const frameRef = useRef(null);
+  const arrowFrameRef = useRef(null);
+  const resumeTimerRef = useRef(null);
+  const animatingRef = useRef(false);
   const positionRef = useRef(0);
   const loopWidthRef = useRef(0);
 
@@ -26,12 +29,52 @@ export default function VillageCarousel({ villages = [] }) {
 
   const moveByCard = (direction) => {
     const rail = railRef.current;
-    if (!rail) return;
+    if (!rail || animatingRef.current) return;
+
     pausedRef.current = true;
     const card = rail.querySelector('[data-carousel-card]');
     const distance = card ? card.getBoundingClientRect().width + 24 : 360;
-    positionRef.current -= direction * distance;
+    const loopWidth = loopWidthRef.current;
+    let startPosition = positionRef.current;
+    let targetPosition = startPosition - direction * distance;
+
+    // Move to the identical duplicated rail position before animating across a loop edge.
+    if (loopWidth > 0 && targetPosition > 0) {
+      startPosition -= loopWidth;
+      targetPosition -= loopWidth;
+    } else if (loopWidth > 0 && targetPosition <= -loopWidth) {
+      startPosition += loopWidth;
+      targetPosition += loopWidth;
+    }
+
+    positionRef.current = startPosition;
     applyPosition();
+    animatingRef.current = true;
+
+    const duration = 620;
+    const startedAt = performance.now();
+    const animate = (now) => {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      const eased = 1 - Math.pow(1 - progress, 4);
+      positionRef.current = startPosition + ((targetPosition - startPosition) * eased);
+      applyPosition();
+
+      if (progress < 1) {
+        arrowFrameRef.current = requestAnimationFrame(animate);
+        return;
+      }
+
+      positionRef.current = targetPosition;
+      applyPosition();
+      animatingRef.current = false;
+
+      if (resumeTimerRef.current) window.clearTimeout(resumeTimerRef.current);
+      resumeTimerRef.current = window.setTimeout(() => {
+        pausedRef.current = false;
+      }, 900);
+    };
+
+    arrowFrameRef.current = requestAnimationFrame(animate);
   };
 
   useEffect(() => {
@@ -50,7 +93,7 @@ export default function VillageCarousel({ villages = [] }) {
 
     const speed = 0.8;
     const tick = () => {
-      if (!pausedRef.current) {
+      if (!pausedRef.current && !animatingRef.current) {
         positionRef.current -= speed;
         applyPosition();
       }
@@ -61,6 +104,8 @@ export default function VillageCarousel({ villages = [] }) {
     return () => {
       observer.disconnect();
       if (frameRef.current) cancelAnimationFrame(frameRef.current);
+      if (arrowFrameRef.current) cancelAnimationFrame(arrowFrameRef.current);
+      if (resumeTimerRef.current) window.clearTimeout(resumeTimerRef.current);
     };
   }, [villages.length]);
 
