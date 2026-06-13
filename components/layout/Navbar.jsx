@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Bell, Menu, X } from 'lucide-react';
 import Link from 'next/link';
+import { useRealtimeNotifications } from '@/lib/realtime/useRealtimeNotifications';
 
 export default function Navbar({ toggleSidebar, isSidebarOpen }) {
   const supabase = createClient();
@@ -44,6 +45,22 @@ export default function Navbar({ toggleSidebar, isSidebarOpen }) {
     }
     fetchSession();
   }, [supabase, fetchNotifications]);
+  const handleRealtimeNotification = useCallback((payload) => {
+    if (payload.eventType === 'INSERT') {
+      setNotifications((current) => [payload.new, ...current.filter((item) => item.id !== payload.new.id)].slice(0, 5));
+      if (!payload.new.is_read) setUnreadCount((current) => current + 1);
+    } else if (payload.eventType === 'UPDATE') {
+      setNotifications((current) => current.map((item) => item.id === payload.new.id ? payload.new : item));
+      fetchNotifications(user?.id);
+    } else if (payload.eventType === 'DELETE') {
+      setNotifications((current) => current.filter((item) => item.id !== payload.old.id));
+      fetchNotifications(user?.id);
+    }
+  }, [fetchNotifications, user?.id]);
+  useRealtimeNotifications({
+    userId: user?.id,
+    onNotification: handleRealtimeNotification
+  });
 
   useEffect(() => {
     const openNotifications = () => setShowNotifications(true);

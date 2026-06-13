@@ -32,6 +32,8 @@ import {
 import DashboardShell from '@/components/layout/DashboardShell';
 import { createClient } from '@/lib/supabase/client';
 import SalesOverviewAreaChart from '@/components/charts/SalesOverviewAreaChart';
+import { useRealtimeTable } from '@/lib/realtime/useRealtimeTable';
+import { useRealtimeRefresh } from '@/lib/realtime/useRealtimeRefresh';
 
 const cardClass = 'rounded-2xl border border-[#e2e8f0] bg-white p-5 shadow-sm';
 const inputClass = 'rounded-lg border border-[#dbe4ee] bg-white px-3 py-2 text-sm text-[#272727] shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15';
@@ -138,8 +140,8 @@ export default function AdminAnalyticsDashboard({ scope = 'global' }) {
     customers: []
   });
 
-  const fetchDashboardData = useCallback(async () => {
-    setLoading(true);
+  const fetchDashboardData = useCallback(async ({ showLoading = true } = {}) => {
+    if (showLoading) setLoading(true);
     try {
       const {
         data: { user }
@@ -212,7 +214,7 @@ export default function AdminAnalyticsDashboard({ scope = 'global' }) {
     } catch (err) {
       console.error('Error loading admin dashboard:', err);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [scope, supabase]);
 
@@ -226,6 +228,24 @@ export default function AdminAnalyticsDashboard({ scope = 'global' }) {
   const effectiveVillageId = data.villages.some((village) => village.id === selectedVillageId)
     ? selectedVillageId
     : '';
+  const refreshDashboardSilently = useCallback(() => {
+    fetchDashboardData({ showLoading: false });
+  }, [fetchDashboardData]);
+  const scheduleDashboardRefresh = useRealtimeRefresh(refreshDashboardSilently, 350);
+  const villageFilter = effectiveVillageId ? `village_id=eq.${effectiveVillageId}` : undefined;
+  const reservationRealtimeStatus = useRealtimeTable({
+    table: 'reservations',
+    filter: villageFilter,
+    onChange: scheduleDashboardRefresh
+  });
+  useRealtimeTable({ table: 'properties', filter: villageFilter, onChange: scheduleDashboardRefresh });
+  useRealtimeTable({ table: 'payments', filter: villageFilter, onChange: scheduleDashboardRefresh });
+  useRealtimeTable({ table: 'site_viewings', filter: villageFilter, onChange: scheduleDashboardRefresh });
+  useRealtimeTable({ table: 'documents', onChange: scheduleDashboardRefresh });
+  useRealtimeTable({ table: 'inquiries', filter: villageFilter, onChange: scheduleDashboardRefresh });
+  useRealtimeTable({ table: 'villages', onChange: scheduleDashboardRefresh, enabled: scope === 'global' });
+  useRealtimeTable({ table: 'profiles', onChange: scheduleDashboardRefresh, enabled: scope === 'global' });
+  useRealtimeTable({ table: 'audit_logs', filter: villageFilter, onChange: scheduleDashboardRefresh, enabled: scope === 'global' });
   const dashboardData = useMemo(() => {
     if (!effectiveVillageId) return data;
 
@@ -342,6 +362,10 @@ export default function AdminAnalyticsDashboard({ scope = 'global' }) {
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <span className="inline-flex h-10 items-center gap-2 self-start rounded-full border border-[#dbe4ee] bg-white px-3 text-[10px] font-extrabold uppercase tracking-wider text-[#64748b] sm:self-end">
+              <span className={`h-2 w-2 rounded-full ${reservationRealtimeStatus === 'connected' ? 'bg-emerald-500' : reservationRealtimeStatus === 'error' ? 'bg-rose-500' : 'bg-amber-400'}`} />
+              {reservationRealtimeStatus === 'connected' ? 'Live sync' : reservationRealtimeStatus === 'error' ? 'Sync error' : 'Connecting'}
+            </span>
             <label className="text-xs font-extrabold uppercase tracking-wider text-[#64748b]">
               <span className="mb-1.5 block">Village Community</span>
               <select

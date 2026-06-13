@@ -19,6 +19,9 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import DelayedLoadingState from '@/components/shared/DelayedLoadingState';
+import { useRealtimeBlueprint } from '@/lib/realtime/useRealtimeBlueprint';
+import { useRealtimeProperties } from '@/lib/realtime/useRealtimeVillage';
+import { useRealtimeRefresh } from '@/lib/realtime/useRealtimeRefresh';
 
 // Synchronous react-konva imports, component is loaded dynamically by parent pages to avoid SSR issues
 import { Stage, Layer, Line, Circle, Rect, Text, Group, Shape, Ellipse, Image as KonvaImage } from 'react-konva';
@@ -229,16 +232,22 @@ export default function InteractiveVillageMap({
     ? 'block text-[10px] text-[#64748b] uppercase tracking-wider mb-1.5 font-bold'
     : 'block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5';
 
-  const fetchMapData = useCallback(async () => {
-    setLoading(true);
+  const fetchMapData = useCallback(async ({
+    showLoading = true,
+    reconcile = true,
+    clearOnError = true
+  } = {}) => {
+    if (showLoading) setLoading(true);
     try {
-      const reconcileResponse = await fetch(
-        `/api/maps/reconcile?villageSlug=${encodeURIComponent(villageSlug)}`,
-        { cache: 'no-store' }
-      );
-      if (!reconcileResponse.ok) {
-        const reconcilePayload = await reconcileResponse.json().catch(() => ({}));
-        console.warn('Map property reconciliation skipped:', reconcilePayload.error || reconcileResponse.statusText);
+      if (reconcile) {
+        const reconcileResponse = await fetch(
+          `/api/maps/reconcile?villageSlug=${encodeURIComponent(villageSlug)}`,
+          { cache: 'no-store' }
+        );
+        if (!reconcileResponse.ok) {
+          const reconcilePayload = await reconcileResponse.json().catch(() => ({}));
+          console.warn('Map property reconciliation skipped:', reconcilePayload.error || reconcileResponse.statusText);
+        }
       }
 
       // 1. Fetch village
@@ -250,10 +259,11 @@ export default function InteractiveVillageMap({
 
       if (vError || !v) {
         if (!allowDemoFallback) {
-          setVillage(null);
-          setProperties([]);
-          setObjects([]);
-          setLoading(false);
+          if (clearOnError) {
+            setVillage(null);
+            setProperties([]);
+            setObjects([]);
+          }
           return;
         }
 
@@ -266,7 +276,6 @@ export default function InteractiveVillageMap({
           province: 'Cavite'
         });
         setObjects(getMockObjects('mock-1'));
-        setLoading(false);
         return;
       }
       
@@ -316,9 +325,11 @@ export default function InteractiveVillageMap({
     } catch (err) {
       console.error('Error loading interactive map data:', err);
       if (!allowDemoFallback) {
-        setVillage(null);
-        setProperties([]);
-        setObjects([]);
+        if (clearOnError) {
+          setVillage(null);
+          setProperties([]);
+          setObjects([]);
+        }
         return;
       }
 
@@ -332,9 +343,47 @@ export default function InteractiveVillageMap({
       });
       setObjects(getMockObjects('mock-1'));
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [villageSlug, supabase, allowDemoFallback, adminShowHidden, preferDraftBlueprint]);
+  const refreshMapSilently = useCallback(() => {
+    fetchMapData({
+      showLoading: false,
+      reconcile: false,
+      clearOnError: false
+    });
+  }, [fetchMapData]);
+  const scheduleMapRefresh = useRealtimeRefresh(refreshMapSilently, 300);
+  const handlePropertyRealtime = useCallback((payload) => {
+    setProperties((current) => {
+      if (payload.eventType === 'DELETE') {
+        return current.filter((property) => property.id !== payload.old?.id);
+      }
+
+      const changed = payload.new;
+      if (!changed?.id) return current;
+      if (!adminShowHidden && changed.status === 'hidden') {
+        return current.filter((property) => property.id !== changed.id);
+      }
+
+      const exists = current.some((property) => property.id === changed.id);
+      return exists
+        ? current.map((property) => property.id === changed.id ? { ...property, ...changed } : property)
+        : [...current, changed];
+    });
+    setSelectedProperty((current) => (
+      current?.id === payload.new?.id ? { ...current, ...payload.new } : current
+    ));
+  }, [adminShowHidden, setSelectedProperty]);
+  const propertyRealtimeStatus = useRealtimeProperties({
+    villageId: village?.id,
+    onPropertyChange: handlePropertyRealtime
+  });
+  const blueprintRealtimeStatus = useRealtimeBlueprint({
+    villageId: village?.id,
+    onBlueprintChange: scheduleMapRefresh,
+    onObjectChange: scheduleMapRefresh
+  });
 
   useEffect(() => {
     const node = viewportRef.current;
@@ -364,28 +413,6 @@ export default function InteractiveVillageMap({
     }
     return undefined;
   }, [villageSlug, fetchMapData]);
-
-  useEffect(() => {
-    if (!village?.id) return undefined;
-
-    const channel = supabase
-      .channel(`property-status-${village.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'properties',
-          filter: `village_id=eq.${village.id}`
-        },
-        () => fetchMapData()
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [fetchMapData, supabase, village?.id]);
 
   useEffect(() => () => {
     if (hoverFrameRef.current) cancelAnimationFrame(hoverFrameRef.current);
@@ -641,6 +668,22 @@ export default function InteractiveVillageMap({
 
   return (
     <div className="w-full">
+      <div className="mb-3 flex justify-end">
+        <span className="inline-flex items-center gap-2 rounded-full border border-[#dbe4ee] bg-white px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-[#64748b]">
+          <span className={`h-2 w-2 rounded-full ${
+            propertyRealtimeStatus === 'connected' && blueprintRealtimeStatus === 'connected'
+              ? 'bg-emerald-500'
+              : propertyRealtimeStatus === 'error' || blueprintRealtimeStatus === 'error'
+                ? 'bg-rose-500'
+                : 'bg-amber-400'
+          }`} />
+          {propertyRealtimeStatus === 'connected' && blueprintRealtimeStatus === 'connected'
+            ? 'Live sync'
+            : propertyRealtimeStatus === 'error' || blueprintRealtimeStatus === 'error'
+              ? 'Sync error'
+              : 'Connecting'}
+        </span>
+      </div>
       {!adminPropertyMode && (
         <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
           Click a green lot to view details and start your reservation.

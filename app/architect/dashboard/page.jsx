@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 import DashboardShell from '@/components/layout/DashboardShell';
 import { createClient } from '@/lib/supabase/client';
+import { useRealtimeBlueprint } from '@/lib/realtime/useRealtimeBlueprint';
+import { useRealtimeRefresh } from '@/lib/realtime/useRealtimeRefresh';
 
 const InteractiveVillageMap = dynamic(
   () => import('@/components/public/InteractiveVillageMap'),
@@ -98,8 +100,11 @@ export default function ArchitectDashboardPage() {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  const fetchArchitectData = useCallback(async ({ preserveSelection = true } = {}) => {
-    setLoading(true);
+  const fetchArchitectData = useCallback(async ({
+    preserveSelection = true,
+    showLoading = true
+  } = {}) => {
+    if (showLoading) setLoading(true);
     setError('');
 
     try {
@@ -219,7 +224,7 @@ export default function ArchitectDashboardPage() {
       console.error('Error loading architect dashboard:', err);
       setError(err.message || 'Unable to load the architect dashboard.');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [router, supabase]);
 
@@ -242,44 +247,17 @@ export default function ArchitectDashboardPage() {
     setShowCreateForm(true);
   };
 
-  useEffect(() => {
-    if (!selectedRow?.blueprint?.id) return undefined;
-
-    const blueprintId = selectedRow.blueprint.id;
-    const refreshPreview = () => {
-      setPreviewVersion((version) => version + 1);
-      setLastSyncedAt(new Date());
-      fetchArchitectData();
-    };
-
-    const channel = supabase
-      .channel(`architect-preview-${blueprintId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'blueprint_objects',
-          filter: `blueprint_id=eq.${blueprintId}`
-        },
-        refreshPreview
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'blueprints',
-          filter: `id=eq.${blueprintId}`
-        },
-        refreshPreview
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [fetchArchitectData, selectedRow?.blueprint?.id, supabase]);
+  const refreshArchitectPreview = useCallback(() => {
+    setPreviewVersion((version) => version + 1);
+    setLastSyncedAt(new Date());
+    fetchArchitectData({ showLoading: false });
+  }, [fetchArchitectData]);
+  const scheduleArchitectRefresh = useRealtimeRefresh(refreshArchitectPreview, 250);
+  useRealtimeBlueprint({
+    blueprintId: selectedRow?.blueprint?.id,
+    onBlueprintChange: scheduleArchitectRefresh,
+    onObjectChange: scheduleArchitectRefresh
+  });
 
   const createBlueprintDraft = async (villageId, redirectToEditor = false) => {
     if (!villageId || !currentUser || !canManageBlueprints) return;

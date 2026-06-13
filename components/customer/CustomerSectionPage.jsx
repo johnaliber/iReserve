@@ -21,6 +21,8 @@ import EmptyState from '@/components/shared/EmptyState';
 import FriendlyStatusBadge from '@/components/customer/FriendlyStatusBadge';
 import { createClient } from '@/lib/supabase/client';
 import AvailabilityCalendar, { toDateKey } from '@/components/site-viewings/AvailabilityCalendar';
+import { useRealtimeTable } from '@/lib/realtime/useRealtimeTable';
+import { useRealtimeRefresh } from '@/lib/realtime/useRealtimeRefresh';
 
 const pageConfig = {
   reservations: {
@@ -127,6 +129,7 @@ export default function CustomerSectionPage({ section }) {
   const Icon = config.icon;
 
   const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState('');
   const [items, setItems] = useState([]);
   const [reservations, setReservations] = useState([]);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -165,19 +168,25 @@ export default function CustomerSectionPage({ section }) {
     }
   }, [supabase]);
 
-  const fetchItems = useCallback(async () => {
+  const fetchItems = useCallback(async ({
+    claimReservations = true,
+    clearOnError = true
+  } = {}) => {
     try {
       const {
         data: { user }
       } = await supabase.auth.getUser();
 
       if (!user) return;
+      setUserId(user.id);
 
-      const claimResponse = await fetch('/api/customer/claim-reservations', {
-        method: 'POST'
-      });
-      if (!claimResponse.ok) {
-        console.error('Guest reservations could not be linked to this customer account.');
+      if (claimReservations) {
+        const claimResponse = await fetch('/api/customer/claim-reservations', {
+          method: 'POST'
+        });
+        if (!claimResponse.ok) {
+          console.error('Guest reservations could not be linked to this customer account.');
+        }
       }
 
       let query;
@@ -228,7 +237,7 @@ export default function CustomerSectionPage({ section }) {
       }
     } catch (err) {
       console.error(`Error loading customer ${section}:`, err);
-      setItems([]);
+      if (clearOnError) setItems([]);
     } finally {
       setLoading(false);
     }
@@ -241,6 +250,26 @@ export default function CustomerSectionPage({ section }) {
 
     return () => clearTimeout(timer);
   }, [fetchItems]);
+  const refreshItemsSilently = useCallback(() => {
+    fetchItems({
+      claimReservations: false,
+      clearOnError: false
+    });
+  }, [fetchItems]);
+  const scheduleItemsRefresh = useRealtimeRefresh(refreshItemsSilently, 250);
+  const realtimeTable = section === 'reservations'
+    ? 'reservations'
+    : section === 'payments'
+      ? 'payments'
+      : section === 'documents'
+        ? 'documents'
+        : 'site_viewings';
+  useRealtimeTable({
+    table: realtimeTable,
+    filter: userId ? `customer_id=eq.${userId}` : undefined,
+    onChange: scheduleItemsRefresh,
+    enabled: Boolean(userId)
+  });
 
   const validateViewingRequest = () => {
     setFormError('');
@@ -298,7 +327,7 @@ export default function CustomerSectionPage({ section }) {
         preferredTime: '',
         notes: ''
       }));
-      await fetchItems();
+      await fetchItems({ claimReservations: false });
       await fetchViewingAvailability(reservation.village_id);
     } catch (err) {
       setFormError(err.message || 'The site viewing request could not be submitted.');

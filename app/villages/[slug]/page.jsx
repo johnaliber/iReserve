@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import InquiryForm from '@/components/public/InquiryForm';
+import HouseShowcaseCarousel from '@/components/public/HouseShowcaseCarousel';
 
 export const revalidate = 0;
 
@@ -26,6 +27,7 @@ export default async function VillageLandingPage({ params }) {
   const { slug } = await params;
   let village = null;
   let properties = [];
+  let houseShowcase = [];
 
   try {
     const supabase = await createClient();
@@ -47,6 +49,20 @@ export default async function VillageLandingPage({ params }) {
         .eq('village_id', village.id);
       
       properties = propData || [];
+
+      const { data: showcaseData } = await supabase
+        .from('property_type_presets')
+        .select('id,name,property_type,model_name,description,price,lot_size,floor_area,bedrooms,bathrooms,parking_slots,house_images,gallery_order')
+        .eq('village_id', village.id)
+        .eq('is_active', true)
+        .eq('show_in_public_gallery', true)
+        .in('property_type', ['house_and_lot', 'townhouse', 'duplex'])
+        .order('gallery_order', { ascending: true })
+        .order('name', { ascending: true });
+
+      houseShowcase = (showcaseData || []).filter(
+        (configuration) => Array.isArray(configuration.house_images) && configuration.house_images.length > 0
+      );
     }
   } catch (error) {
     console.error('Error fetching village details:', error);
@@ -138,7 +154,7 @@ export default async function VillageLandingPage({ params }) {
             Back to Home
           </Link>
 
-          
+
 
           <div className="flex items-center gap-1.5 text-slate-400 text-sm mb-2">
             <MapPin className="w-4 h-4 text-emerald-400" />
@@ -174,25 +190,8 @@ export default async function VillageLandingPage({ params }) {
             </p>
           </div>
 
-          {/* Amenities Grid */}
-          <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 md:p-8 glass-card">
-            <h2 className="text-xl font-bold mb-6 text-slate-200">Amenities</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {currentAmenities.map((amenity, idx) => (
-                <div key={idx} className="flex gap-4 items-start p-4 bg-slate-950/40 border border-slate-900 rounded-xl hover:border-emerald-500/20 transition-all duration-200">
-                  <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 shadow-inner flex-shrink-0">
-                    {getAmenityIcon(amenity)}
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-slate-200 text-sm">{amenity}</h4>
-                    <p className="text-slate-500 text-[11px] mt-1 leading-normal">
-                      Available for residents and visitors within the community.
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          
+          
         </div>
 
         {/* Right Column: CTA Panel */}
@@ -231,24 +230,33 @@ export default async function VillageLandingPage({ params }) {
 
       </section>
 
-      {properties.filter((property) => property.status === 'available').length > 0 && (
-        <section id="available-lots" className="mx-auto w-full max-w-7xl px-4 pb-12">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-600">Available Lots Preview</p>
-              <h2 className="mt-1 text-2xl font-extrabold text-[#272727]">A few lots you can view now</h2>
+      {houseShowcase.length > 0 && (
+        <section id="house-models" className="mx-auto w-full max-w-7xl px-4 pb-14">
+          <HouseShowcaseCarousel
+            houses={houseShowcase}
+            mapHref={`/villages/${selectedVillage.slug}/map`}
+          />
+
+          {/* Amenities Grid */}
+          <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 md:p-8 glass-card">
+            <h2 className="text-xl font-bold mb-6 text-slate-200">Amenities</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {currentAmenities.map((amenity, idx) => (
+                <div key={idx} className="flex gap-4 items-start p-4 bg-slate-950/40 border border-slate-900 rounded-xl hover:border-emerald-500/20 transition-all duration-200">
+                  <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 shadow-inner flex-shrink-0">
+                    {getAmenityIcon(amenity)}
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-slate-200 text-sm">{amenity}</h4>
+                    <p className="text-slate-500 text-[11px] mt-1 leading-normal">
+                      Available for residents and visitors within the community.
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
-            <Link href={`/villages/${selectedVillage.slug}/map`} className="text-sm font-extrabold text-emerald-700">View All Lots</Link>
           </div>
-          <div className="mt-5 grid gap-4 md:grid-cols-3">
-            {properties.filter((property) => property.status === 'available').slice(0, 3).map((property) => (
-              <Link key={property.id} href={`/villages/${selectedVillage.slug}/map`} className="rounded-2xl border border-[#e2e8f0] bg-white p-5 shadow-sm transition hover:border-emerald-200">
-                <p className="font-extrabold text-[#272727]">Block {property.block_number}, Lot {property.lot_number}</p>
-                <p className="mt-1 text-sm text-[#64748b]">{property.lot_size} sqm lot area</p>
-                <p className="mt-4 text-lg font-extrabold text-emerald-700">PHP {Number(property.price || 0).toLocaleString()}</p>
-              </Link>
-            ))}
-          </div>
+
         </section>
       )}
 

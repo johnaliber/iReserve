@@ -14,10 +14,14 @@ function json(status, payload) {
 export async function POST(request) {
   const supabase = await createClient();
   const admin = createAdminClient();
-  const { documentId, status, rejectionReason } = await request.json();
+  const { documentId, status, rejectionReason, reviewConfirmed } = await request.json();
 
   if (!documentId || !['approved', 'rejected'].includes(status)) {
     return json(400, { error: 'Document and review status are required.' });
+  }
+
+  if (reviewConfirmed !== true) {
+    return json(400, { error: 'Open and review the uploaded document before approving or rejecting it.' });
   }
 
   if (status === 'rejected' && !rejectionReason?.trim()) {

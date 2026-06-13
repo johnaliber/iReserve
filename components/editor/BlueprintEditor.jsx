@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { createClient } from '@/lib/supabase/client';
 import EditorToolbar from './EditorToolbar';
@@ -10,6 +10,7 @@ import LayersPanel from './LayersPanel';
 import { Loader2, ArrowLeft, CheckCircle, AlertTriangle, Circle, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import Link from 'next/link';
 import { prepareBlueprintObjectDuplicate } from '@/lib/editor/duplicateObject';
+import { useRealtimeBlueprint } from '@/lib/realtime/useRealtimeBlueprint';
 
 // Dynamically import CanvasStage with SSR disabled as Konva requires window context
 const CanvasStage = dynamic(() => import('./CanvasStage'), { ssr: false });
@@ -117,6 +118,8 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
   const [clipboardObjects, setClipboardObjects] = useState([]);
   const [amenityShapeMode, setAmenityShapeMode] = useState('icon');
   const [duplicateNotice, setDuplicateNotice] = useState('');
+  const [externalUpdateWarning, setExternalUpdateWarning] = useState(false);
+  const ignoreRealtimeUntilRef = useRef(0);
 
   useEffect(() => {
     Promise.resolve().then(() => {
@@ -137,8 +140,8 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
     sunlight: true
   });
 
-  const fetchBlueprintData = useCallback(async () => {
-    setLoading(true);
+  const fetchBlueprintData = useCallback(async ({ showLoading = true } = {}) => {
+    if (showLoading) setLoading(true);
     try {
       // 1. Fetch blueprint meta
       const { data: bp, error: bpError } = await supabase
@@ -169,7 +172,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
       console.error('Error fetching blueprint data:', error);
       setSaveStatus('error');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [blueprintId, supabase]);
 
@@ -180,6 +183,20 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
       });
     }
   }, [blueprintId, fetchBlueprintData]);
+
+  const handleExternalBlueprintChange = useCallback(() => {
+    if (Date.now() < ignoreRealtimeUntilRef.current) return;
+    if (hasUnsavedChanges) {
+      setExternalUpdateWarning(true);
+      return;
+    }
+    fetchBlueprintData({ showLoading: false });
+  }, [fetchBlueprintData, hasUnsavedChanges]);
+  const realtimeStatus = useRealtimeBlueprint({
+    blueprintId,
+    onBlueprintChange: handleExternalBlueprintChange,
+    onObjectChange: handleExternalBlueprintChange
+  });
 
   useEffect(() => {
     const handleBeforeUnload = (e) => {
@@ -415,6 +432,7 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
 
   // 1. SAVE DRAFT
   const handleSaveDraft = async () => {
+    ignoreRealtimeUntilRef.current = Date.now() + 5000;
     setSaveStatus('saving');
     setSaveError('');
     try {
@@ -755,6 +773,39 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
         </div>
       )}
 
+      {externalUpdateWarning && (
+        <div className="absolute inset-0 z-[70] flex items-center justify-center bg-[#272727]/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-[#e2e8f0] bg-white p-5 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="rounded-xl bg-amber-50 p-2 text-amber-600">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="font-extrabold text-[#272727]">New blueprint changes detected</h2>
+                <p className="mt-1 text-sm leading-6 text-[#64748b]">
+                  Another user updated this blueprint. Reloading may discard your unsaved changes.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setExternalUpdateWarning(false)} className="rounded-lg border border-[#dbe4ee] bg-white px-4 py-2 text-sm font-bold text-[#272727] hover:bg-[#f8fafc]">
+                Keep Editing
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setExternalUpdateWarning(false);
+                  await fetchBlueprintData();
+                }}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-extrabold text-white hover:bg-emerald-500"
+              >
+                Reload Latest
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 min-h-0 min-w-0 flex overflow-hidden relative">
         {/* 2. Left side Toolbox */}
         {!previewMode && (
@@ -808,6 +859,10 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
               <span className="truncate font-bold text-slate-900">{blueprint?.name}</span>
             </span>
             <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe4ee] bg-white px-2.5 py-1 text-[10px] font-bold text-[#64748b]">
+                <span className={`h-2 w-2 rounded-full ${realtimeStatus === 'connected' ? 'bg-emerald-500' : realtimeStatus === 'error' ? 'bg-rose-500' : 'bg-amber-400'}`} />
+                {realtimeStatus === 'connected' ? 'Live sync' : realtimeStatus === 'error' ? 'Sync error' : 'Connecting'}
+              </span>
               <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-700">
                 {blueprint?.status}
               </span>

@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import DashboardShell from '@/components/layout/DashboardShell';
 import { getManageableVillages } from '@/lib/villages/getManageableVillages';
+import { useRealtimeReservation } from '@/lib/realtime/useRealtimeReservation';
+import { useRealtimeRefresh } from '@/lib/realtime/useRealtimeRefresh';
 import { 
   Inbox, 
   Search, 
@@ -34,8 +36,11 @@ export default function VillageAdminReservationsPage() {
   const [actionMsg, setActionMsg] = useState('');
   const [actionErr, setActionErr] = useState('');
 
-  const fetchReservations = useCallback(async (villageId) => {
-    setLoading(true);
+  const fetchReservations = useCallback(async (
+    villageId,
+    { showLoading = true } = {}
+  ) => {
+    if (showLoading) setLoading(true);
     try {
       const { data, error } = await supabase
         .from('reservations')
@@ -49,7 +54,7 @@ export default function VillageAdminReservationsPage() {
     } catch (err) {
       console.error('Error loading reservations:', err);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [supabase]);
 
@@ -78,6 +83,16 @@ export default function VillageAdminReservationsPage() {
     }, 0);
     return () => clearTimeout(timer);
   }, [fetchInitData]);
+  const refreshSelectedReservations = useCallback(() => {
+    if (selectedVillageId) {
+      fetchReservations(selectedVillageId, { showLoading: false });
+    }
+  }, [fetchReservations, selectedVillageId]);
+  const scheduleReservationRefresh = useRealtimeRefresh(refreshSelectedReservations, 250);
+  useRealtimeReservation({
+    villageId: selectedVillageId,
+    onReservationChange: scheduleReservationRefresh
+  });
 
   const handleVillageChange = (e) => {
     const vId = e.target.value;
@@ -106,7 +121,7 @@ export default function VillageAdminReservationsPage() {
       setTimeout(() => setActionMsg(''), 3000);
       
       // Refresh list
-      fetchReservations(selectedVillageId);
+      fetchReservations(selectedVillageId, { showLoading: false });
     } catch (err) {
       setActionErr(err.message || 'Error processing reservation status.');
       setTimeout(() => setActionErr(''), 4000);

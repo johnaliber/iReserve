@@ -8,6 +8,8 @@ import AdminPageHeader from './AdminPageHeader';
 import AdminFilterBar from './AdminFilterBar';
 import AdminSectionCard from './AdminSectionCard';
 import AdminEmptyState from './AdminEmptyState';
+import { useRealtimeTable } from '@/lib/realtime/useRealtimeTable';
+import { useRealtimeRefresh } from '@/lib/realtime/useRealtimeRefresh';
 
 const AUDIT_PAGE_SIZE = 10;
 
@@ -26,6 +28,12 @@ export default function AuditLogsPage() {
     const timer = setTimeout(load, 0);
     return () => clearTimeout(timer);
   }, [load]);
+  const scheduleAuditRefresh = useRealtimeRefresh(load, 250);
+  useRealtimeTable({
+    table: 'audit_logs',
+    event: 'INSERT',
+    onChange: scheduleAuditRefresh
+  });
   const actions = useMemo(() => [...new Set(data.logs.map((log) => log.action))].sort(), [data.logs]);
   const entities = useMemo(() => [...new Set(data.logs.map((log) => log.entity_type))].sort(), [data.logs]);
   const filtered = useMemo(() => data.logs.filter((log) => {

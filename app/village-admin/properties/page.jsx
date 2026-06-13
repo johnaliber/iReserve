@@ -25,6 +25,8 @@ import {
   X
 } from 'lucide-react';
 import Pagination from '@/components/shared/Pagination';
+import { useRealtimeProperties } from '@/lib/realtime/useRealtimeVillage';
+import { useRealtimeRefresh } from '@/lib/realtime/useRealtimeRefresh';
 
 const PROPERTY_PAGE_SIZE = 8;
 
@@ -45,7 +47,10 @@ const EMPTY_PRESET = {
   flood_risk: 'low',
   sunlight_exposure: 'balanced',
   thumbnail_url: '',
-  floor_plan_url: ''
+  floor_plan_url: '',
+  house_images: [],
+  show_in_public_gallery: true,
+  gallery_order: '0'
 };
 
 const acceptedImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
@@ -93,8 +98,11 @@ export default function VillageAdminPropertiesPage() {
   const [viewMode, setViewMode] = useState('list');
   const [page, setPage] = useState(1);
 
-  const fetchProperties = useCallback(async (villageId) => {
-    setLoading(true);
+  const fetchProperties = useCallback(async (
+    villageId,
+    { showLoading = true } = {}
+  ) => {
+    if (showLoading) setLoading(true);
     try {
       const { data, error } = await supabase
         .from('properties')
@@ -109,7 +117,7 @@ export default function VillageAdminPropertiesPage() {
     } catch (err) {
       console.error('Error loading properties list:', err);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [supabase]);
 
@@ -152,6 +160,16 @@ export default function VillageAdminPropertiesPage() {
     }, 0);
     return () => clearTimeout(timer);
   }, [fetchInitData]);
+  const refreshSelectedProperties = useCallback(() => {
+    if (selectedVillageId) {
+      fetchProperties(selectedVillageId, { showLoading: false });
+    }
+  }, [fetchProperties, selectedVillageId]);
+  const schedulePropertiesRefresh = useRealtimeRefresh(refreshSelectedProperties, 250);
+  useRealtimeProperties({
+    villageId: selectedVillageId,
+    onPropertyChange: schedulePropertiesRefresh
+  });
 
   const handleVillageChange = (e) => {
     const vId = e.target.value;
@@ -193,7 +211,10 @@ export default function VillageAdminPropertiesPage() {
       flood_risk: preset.flood_risk || 'low',
       sunlight_exposure: preset.sunlight_exposure || 'balanced',
       thumbnail_url: preset.thumbnail_url || '',
-      floor_plan_url: preset.floor_plan_url || ''
+      floor_plan_url: preset.floor_plan_url || '',
+      house_images: Array.isArray(preset.house_images) ? preset.house_images : [],
+      show_in_public_gallery: preset.show_in_public_gallery !== false,
+      gallery_order: preset.gallery_order?.toString() || '0'
     });
     setEditingPresetId(preset.id);
     setShowPresetForm(true);
@@ -243,7 +264,14 @@ export default function VillageAdminPropertiesPage() {
         .from('blueprint-assets')
         .getPublicUrl(storagePath);
 
-      updatePresetField(field, data.publicUrl);
+      if (field === 'house_images') {
+        setPresetForm((current) => ({
+          ...current,
+          house_images: [...current.house_images, data.publicUrl]
+        }));
+      } else {
+        updatePresetField(field, data.publicUrl);
+      }
     } catch (err) {
       setError(err.message || 'Image could not be uploaded.');
     } finally {
@@ -274,6 +302,8 @@ export default function VillageAdminPropertiesPage() {
       bedrooms: Number.parseInt(presetForm.bedrooms || 0, 10),
       bathrooms: Number.parseInt(presetForm.bathrooms || 0, 10),
       parking_slots: Number.parseInt(presetForm.parking_slots || 0, 10),
+      show_in_public_gallery: Boolean(presetForm.show_in_public_gallery),
+      gallery_order: Number.parseInt(presetForm.gallery_order || 0, 10),
       orientation: null,
       updated_at: new Date().toISOString()
     };
@@ -1083,6 +1113,84 @@ export default function VillageAdminPropertiesPage() {
                         )}
                       </div>
                     ))}
+                    <div className="rounded-lg border border-[#dbe4ee] bg-white p-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-[#64748b]">House Model Images</p>
+                          <p className="mt-1 text-sm font-bold text-[#272727]">
+                            {presetForm.house_images.length
+                              ? `${presetForm.house_images.length} carousel image${presetForm.house_images.length === 1 ? '' : 's'}`
+                              : 'Upload images for this model'}
+                          </p>
+                          <p className="mt-1 text-xs text-[#64748b]">Upload multiple exterior or interior views.</p>
+                        </div>
+                        <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-emerald-500">
+                          {uploadingPresetField === 'house_images' ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                          {uploadingPresetField === 'house_images' ? 'Uploading...' : 'Add Images'}
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            multiple
+                            className="hidden"
+                            disabled={Boolean(uploadingPresetField)}
+                            onChange={async (e) => {
+                              const files = Array.from(e.target.files || []);
+                              for (const file of files) {
+                                await handlePresetMediaUpload('house_images', file);
+                              }
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
+                      </div>
+                      {presetForm.house_images.length > 0 && (
+                        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                          {presetForm.house_images.map((imageUrl, index) => (
+                            <div key={`${imageUrl}-${index}`} className="group relative overflow-hidden rounded-lg border border-[#e2e8f0] bg-[#f8fafc]">
+                              <div
+                                role="img"
+                                aria-label={`House model image ${index + 1}`}
+                                className="h-24 bg-cover bg-center"
+                                style={{ backgroundImage: `url("${imageUrl}")` }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setPresetForm((current) => ({
+                                  ...current,
+                                  house_images: current.house_images.filter((_, imageIndex) => imageIndex !== index)
+                                }))}
+                                className="absolute right-1.5 top-1.5 rounded-md bg-white/95 px-2 py-1 text-[10px] font-extrabold text-rose-600 shadow transition hover:bg-rose-50"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_140px]">
+                    <label className="flex items-center gap-3 rounded-lg border border-[#dbe4ee] bg-[#f8fafc] px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={presetForm.show_in_public_gallery}
+                        onChange={(e) => updatePresetField('show_in_public_gallery', e.target.checked)}
+                        className="h-4 w-4 accent-emerald-600"
+                      />
+                      <span>
+                        <span className="block text-sm font-bold text-[#272727]">Show in public house carousel</span>
+                        <span className="mt-0.5 block text-xs text-[#64748b]">Requires at least one house model image.</span>
+                      </span>
+                    </label>
+                    <MiniField label="Display Order">
+                      <input
+                        type="number"
+                        min="0"
+                        className={presetInputClass}
+                        value={presetForm.gallery_order}
+                        onChange={(e) => updatePresetField('gallery_order', e.target.value)}
+                      />
+                    </MiniField>
                   </div>
                 </section>
               </div>

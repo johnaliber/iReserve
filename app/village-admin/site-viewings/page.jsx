@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import DashboardShell from '@/components/layout/DashboardShell';
 import { getManageableVillages } from '@/lib/villages/getManageableVillages';
+import { useRealtimeVillage } from '@/lib/realtime/useRealtimeVillage';
+import { useRealtimeRefresh } from '@/lib/realtime/useRealtimeRefresh';
 import { 
   Calendar, 
   Search, 
@@ -33,8 +35,11 @@ export default function VillageAdminSiteViewingsPage() {
   const [actionMsg, setActionMsg] = useState('');
   const [actionErr, setActionErr] = useState('');
 
-  const fetchViewings = useCallback(async (villageId) => {
-    setLoading(true);
+  const fetchViewings = useCallback(async (
+    villageId,
+    { showLoading = true, clearOnError = true } = {}
+  ) => {
+    if (showLoading) setLoading(true);
     try {
       const { data, error } = await supabase
         .from('site_viewings')
@@ -46,10 +51,12 @@ export default function VillageAdminSiteViewingsPage() {
       setViewings(data || []);
     } catch (err) {
       console.error('Error fetching viewings list:', err);
-      setViewings([]);
-      setActionErr(err.message || 'Site viewing requests could not be loaded.');
+      if (clearOnError) {
+        setViewings([]);
+        setActionErr(err.message || 'Site viewing requests could not be loaded.');
+      }
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [supabase]);
 
@@ -78,6 +85,20 @@ export default function VillageAdminSiteViewingsPage() {
     }, 0);
     return () => clearTimeout(timer);
   }, [fetchInitData]);
+  const refreshSelectedViewings = useCallback(() => {
+    if (selectedVillageId) {
+      fetchViewings(selectedVillageId, {
+        showLoading: false,
+        clearOnError: false
+      });
+    }
+  }, [fetchViewings, selectedVillageId]);
+  const scheduleViewingRefresh = useRealtimeRefresh(refreshSelectedViewings, 250);
+  useRealtimeVillage({
+    table: 'site_viewings',
+    villageId: selectedVillageId,
+    onChange: scheduleViewingRefresh
+  });
 
   const handleVillageChange = (e) => {
     const vId = e.target.value;
@@ -104,7 +125,7 @@ export default function VillageAdminSiteViewingsPage() {
           : '';
       setActionMsg(`Site viewing appointment successfully ${newStatus}.${deliveryNote}`);
       setTimeout(() => setActionMsg(''), 3000);
-      await fetchViewings(selectedVillageId);
+      await fetchViewings(selectedVillageId, { showLoading: false });
     } catch (err) {
       setActionErr(err.message || 'Error updating viewing schedule.');
       setTimeout(() => setActionErr(''), 4000);

@@ -105,7 +105,7 @@ export default function PropertyDetailModal({ property, isOpen, onClose, showInt
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/70 p-0 backdrop-blur-sm transition-opacity md:items-center md:p-4">
       
       {/* Modal card box */}
-      <div className="relative z-10 flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-t-3xl border border-slate-800 bg-slate-900 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200 md:max-h-[88vh] md:flex-row md:rounded-3xl">
+      <div className="relative z-10 flex max-h-[calc(100dvh-1rem)] w-full max-w-5xl flex-col overflow-hidden rounded-t-3xl border border-slate-800 bg-slate-900 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200 md:max-h-[calc(100dvh-8rem)] md:flex-row md:rounded-3xl">
         
         {/* Close Button */}
         <button

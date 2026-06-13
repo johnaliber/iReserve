@@ -33,7 +33,7 @@ export default function VillageCard({ village }) {
         <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent" />
         
         {/* Available Properties Tag */}
-        <div className="absolute right-4 top-4 flex items-center gap-1 rounded-full bg-emerald-600 px-3 py-1 text-xs font-bold text-white shadow-md">
+        <div className="absolute right-4 top-4 flex items-center gap-1 rounded-full bg-emerald-500 px-3 py-1 text-xs font-bold text-white shadow-md">
           <Home className="w-3.5 h-3.5" />
           <span>{available_count} Available</span>
         </div>

@@ -30,6 +30,10 @@ import EmptyState from '@/components/shared/EmptyState';
 import CustomerDashboardCard from '@/components/customer/CustomerDashboardCard';
 import NextStepCard from '@/components/customer/NextStepCard';
 import FriendlyStatusBadge from '@/components/customer/FriendlyStatusBadge';
+import { useRealtimeReservation } from '@/lib/realtime/useRealtimeReservation';
+import { useRealtimePayments } from '@/lib/realtime/useRealtimePayments';
+import { useRealtimeTable } from '@/lib/realtime/useRealtimeTable';
+import { useRealtimeRefresh } from '@/lib/realtime/useRealtimeRefresh';
 
 function getPlanTerm(plan) {
   if (plan?.payment_type === 'full_payment') return 0;
@@ -86,18 +90,22 @@ export default function CustomerDashboardPage() {
   const [confirmPayment, setConfirmPayment] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState(null);
 
-  const fetchDashboardData = useCallback(async () => {
+  const fetchDashboardData = useCallback(async ({
+    claimReservations = true
+  } = {}) => {
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) return;
 
       setUser(authUser);
 
-      const claimResponse = await fetch('/api/customer/claim-reservations', {
-        method: 'POST'
-      });
-      if (!claimResponse.ok) {
-        console.error('Guest reservations could not be linked to this customer account.');
+      if (claimReservations) {
+        const claimResponse = await fetch('/api/customer/claim-reservations', {
+          method: 'POST'
+        });
+        if (!claimResponse.ok) {
+          console.error('Guest reservations could not be linked to this customer account.');
+        }
       }
 
       // 1. Fetch Reservations
@@ -146,6 +154,41 @@ export default function CustomerDashboardPage() {
       fetchDashboardData();
     });
   }, [fetchDashboardData]);
+  const refreshDashboardSilently = useCallback(() => {
+    fetchDashboardData({ claimReservations: false });
+  }, [fetchDashboardData]);
+  const scheduleDashboardRefresh = useRealtimeRefresh(refreshDashboardSilently, 300);
+  const reservationRealtimeStatus = useRealtimeReservation({
+    customerId: user?.id,
+    onReservationChange: scheduleDashboardRefresh
+  });
+  useRealtimePayments({
+    customerId: user?.id,
+    onPaymentChange: scheduleDashboardRefresh
+  });
+  useRealtimeTable({
+    table: 'payment_plans',
+    filter: user?.id ? `customer_id=eq.${user.id}` : undefined,
+    onChange: scheduleDashboardRefresh,
+    enabled: Boolean(user?.id)
+  });
+  useRealtimeTable({
+    table: 'payment_schedule',
+    onChange: scheduleDashboardRefresh,
+    enabled: Boolean(user?.id)
+  });
+  useRealtimeTable({
+    table: 'documents',
+    filter: user?.id ? `customer_id=eq.${user.id}` : undefined,
+    onChange: scheduleDashboardRefresh,
+    enabled: Boolean(user?.id)
+  });
+  useRealtimeTable({
+    table: 'site_viewings',
+    filter: user?.id ? `customer_id=eq.${user.id}` : undefined,
+    onChange: scheduleDashboardRefresh,
+    enabled: Boolean(user?.id)
+  });
 
   const openNextPayment = (row, plan, reservation) => {
     setSelectedDue({ row, plan, reservation });
@@ -189,7 +232,7 @@ export default function CustomerDashboardPage() {
       alert('Payment submitted. Accounting will verify it shortly.');
       setConfirmPayment(false);
       closeNextPayment();
-      await fetchDashboardData();
+      await fetchDashboardData({ claimReservations: false });
     } catch (err) {
       alert(err.message || 'Payment could not be submitted.');
     } finally {
@@ -231,13 +274,19 @@ export default function CustomerDashboardPage() {
               Here is a simple overview of your reservation and what to do next.
             </p>
           </div>
-          <Link
-            href="/villages"
-            className="self-start md:self-auto flex items-center gap-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl transition shadow"
-          >
-            Browse Villages
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
+          <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#dbe4ee] bg-white px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-[#64748b]">
+              <span className={`h-2 w-2 rounded-full ${reservationRealtimeStatus === 'connected' ? 'bg-emerald-500' : reservationRealtimeStatus === 'error' ? 'bg-rose-500' : 'bg-amber-400'}`} />
+              {reservationRealtimeStatus === 'connected' ? 'Live sync' : reservationRealtimeStatus === 'error' ? 'Sync error' : 'Connecting'}
+            </span>
+            <Link
+              href="/villages"
+              className="flex items-center gap-1 rounded-xl bg-emerald-500 px-4 py-2.5 text-xs font-bold text-slate-950 shadow transition hover:bg-emerald-400"
+            >
+              Browse Villages
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

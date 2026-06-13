@@ -6,15 +6,18 @@ import CustomerShell from '@/components/customer/CustomerShell';
 import EmptyState from '@/components/shared/EmptyState';
 import DelayedLoadingState from '@/components/shared/DelayedLoadingState';
 import { createClient } from '@/lib/supabase/client';
+import { useRealtimeNotifications } from '@/lib/realtime/useRealtimeNotifications';
 
 export default function CustomerNotificationsPage() {
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState([]);
+  const [userId, setUserId] = useState('');
 
   const loadNotifications = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return setLoading(false);
+    setUserId(user.id);
     const { data } = await supabase
       .from('notifications')
       .select('*')
@@ -27,6 +30,24 @@ export default function CustomerNotificationsPage() {
   useEffect(() => {
     Promise.resolve().then(loadNotifications);
   }, [loadNotifications]);
+  useRealtimeNotifications({
+    userId,
+    onNotification: useCallback((payload) => {
+      if (payload.eventType === 'INSERT') {
+        setNotifications((current) => (
+          current.some((item) => item.id === payload.new.id)
+            ? current
+            : [payload.new, ...current]
+        ));
+      } else if (payload.eventType === 'UPDATE') {
+        setNotifications((current) => current.map((item) => (
+          item.id === payload.new.id ? payload.new : item
+        )));
+      } else if (payload.eventType === 'DELETE') {
+        setNotifications((current) => current.filter((item) => item.id !== payload.old.id));
+      }
+    }, [])
+  });
 
   const markAllRead = async () => {
     const { data: { user } } = await supabase.auth.getUser();

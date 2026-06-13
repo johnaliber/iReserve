@@ -18,7 +18,10 @@ import {
   ShieldCheck, 
   Filter, 
   Download,
+  ExternalLink,
+  Eye,
   FileCheck,
+  FileText,
   ReceiptText,
   Users,
   Loader2,
@@ -28,6 +31,8 @@ import PaymentVerificationPanel from '@/components/accounting/PaymentVerificatio
 import { formatPeso } from '@/lib/payments/paymentMath';
 import { addCalendarMonths, dateOnly, normalizeMonthlyScheduleRows } from '@/lib/payments/scheduleDates';
 import { getManageableVillages } from '@/lib/villages/getManageableVillages';
+import { useRealtimeTable } from '@/lib/realtime/useRealtimeTable';
+import { useRealtimeRefresh } from '@/lib/realtime/useRealtimeRefresh';
 
 function formatDate(value) {
   if (!value) return 'Not set';
@@ -173,6 +178,9 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
   const [accountPlans, setAccountPlans] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [reviewingDocumentId, setReviewingDocumentId] = useState(null);
+  const [selectedDocument, setSelectedDocument] = useState(null);
+  const [documentReviewDecision, setDocumentReviewDecision] = useState('');
+  const [documentRejectionReason, setDocumentRejectionReason] = useState('');
   const [notifyingPlanId, setNotifyingPlanId] = useState(null);
   const [cashPlan, setCashPlan] = useState(null);
   const [cashAmount, setCashAmount] = useState('');
@@ -214,26 +222,35 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
     return () => window.clearTimeout(timer);
   }, [actionAlert]);
 
-  const fetchPayments = useCallback(async (villageId) => {
+  const fetchPayments = useCallback(async (
+    villageId,
+    {
+      showLoading = true,
+      reconcile = true,
+      clearOnError = true
+    } = {}
+  ) => {
     if (!villageId) {
       setPayments([]);
       setAccountPlans([]);
       setDocuments([]);
-      setLoading(false);
+      if (showLoading) setLoading(false);
       return;
     }
 
-    setLoading(true);
-    setScopeError('');
+    if (showLoading) setLoading(true);
+    if (showLoading) setScopeError('');
     try {
-      const reconcileResponse = await fetch('/api/accounting/customer-accounts/reconcile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ villageId })
-      });
-      if (!reconcileResponse.ok) {
-        const reconcilePayload = await reconcileResponse.json().catch(() => ({}));
-        console.warn('Customer ledger reconciliation skipped:', reconcilePayload.error || reconcileResponse.statusText);
+      if (reconcile) {
+        const reconcileResponse = await fetch('/api/accounting/customer-accounts/reconcile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ villageId })
+        });
+        if (!reconcileResponse.ok) {
+          const reconcilePayload = await reconcileResponse.json().catch(() => ({}));
+          console.warn('Customer ledger reconciliation skipped:', reconcilePayload.error || reconcileResponse.statusText);
+        }
       }
 
       const paymentsQuery = supabase
@@ -272,12 +289,16 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
       setDocuments((documentRows || []).filter((document) => document.reservations?.properties?.village_id === villageId));
     } catch (err) {
       console.error('Error fetching accounting dashboard data:', err);
-      setScopeError(err.message || 'Payment audit data could not be loaded.');
-      setPayments([]);
-      setAccountPlans([]);
-      setDocuments([]);
+      if (showLoading) {
+        setScopeError(err.message || 'Payment audit data could not be loaded.');
+      }
+      if (clearOnError) {
+        setPayments([]);
+        setAccountPlans([]);
+        setDocuments([]);
+      }
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [supabase]);
 
@@ -323,30 +344,66 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
     }
   };
 
-  const handleReviewDocument = async (document, status) => {
-    const rejectionReason = status === 'rejected'
-      ? window.prompt('Why is this document being rejected?')
-      : '';
+  const openDocumentReview = (document) => {
+    setSelectedDocument(document);
+    setDocumentReviewDecision('');
+    setDocumentRejectionReason('');
+  };
 
-    if (status === 'rejected' && !rejectionReason?.trim()) return;
+  const closeDocumentReview = () => {
+    if (reviewingDocumentId) return;
+    setSelectedDocument(null);
+    setDocumentReviewDecision('');
+    setDocumentRejectionReason('');
+  };
 
-    setReviewingDocumentId(document.id);
+  const handleReviewDocument = async (status) => {
+    if (!selectedDocument) return;
+    if (status === 'rejected' && !documentRejectionReason.trim()) {
+      setActionAlert({
+        type: 'warning',
+        title: 'Rejection reason required',
+        message: 'Explain what is wrong with the document so the customer knows what to upload again.'
+      });
+      return;
+    }
+
+    setReviewingDocumentId(selectedDocument.id);
     try {
       const response = await fetch('/api/accounting/documents/review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          documentId: document.id,
+          documentId: selectedDocument.id,
           status,
-          rejectionReason
+          rejectionReason: status === 'rejected' ? documentRejectionReason.trim() : '',
+          reviewConfirmed: true
         })
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Document review failed.');
 
-      await fetchPayments(selectedVillageId);
+      setActionAlert({
+        type: 'success',
+        title: status === 'approved' ? 'Document approved' : 'Document rejected',
+        message: status === 'approved'
+          ? 'The document was approved and the customer record was updated.'
+          : 'The document was rejected and the customer was notified with the reason.'
+      });
+      setSelectedDocument(null);
+      setDocumentReviewDecision('');
+      setDocumentRejectionReason('');
+      await fetchPayments(selectedVillageId, {
+        showLoading: false,
+        reconcile: false,
+        clearOnError: false
+      });
     } catch (err) {
-      alert(err.message || 'Document review failed.');
+      setActionAlert({
+        type: 'error',
+        title: 'Document review failed',
+        message: err.message || 'The document review could not be saved.'
+      });
     } finally {
       setReviewingDocumentId(null);
     }
@@ -402,7 +459,11 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
       setCashAmount('');
       setCashReceipt('');
       setCashNotes('');
-      await fetchPayments(selectedVillageId);
+      await fetchPayments(selectedVillageId, {
+        showLoading: false,
+        reconcile: false,
+        clearOnError: false
+      });
     } catch (err) {
       setActionAlert({
         type: 'error',
@@ -445,6 +506,37 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
       Promise.resolve().then(() => fetchPayments(selectedVillageId));
     }
   }, [fetchPayments, selectedVillageId]);
+  const refreshAccountingData = useCallback(() => {
+    if (selectedVillageId) {
+      fetchPayments(selectedVillageId, {
+        showLoading: false,
+        reconcile: false,
+        clearOnError: false
+      });
+    }
+  }, [fetchPayments, selectedVillageId]);
+  const scheduleAccountingRefresh = useRealtimeRefresh(refreshAccountingData, 350);
+  const accountingRealtimeStatus = useRealtimeTable({
+    table: 'payments',
+    filter: selectedVillageId ? `village_id=eq.${selectedVillageId}` : undefined,
+    onChange: scheduleAccountingRefresh,
+    enabled: Boolean(selectedVillageId)
+  });
+  useRealtimeTable({
+    table: 'payment_plans',
+    filter: selectedVillageId ? `village_id=eq.${selectedVillageId}` : undefined,
+    onChange: scheduleAccountingRefresh,
+    enabled: Boolean(selectedVillageId)
+  });
+  useRealtimeTable({ table: 'payment_schedule', onChange: scheduleAccountingRefresh, enabled: Boolean(selectedVillageId) });
+  useRealtimeTable({ table: 'documents', onChange: scheduleAccountingRefresh, enabled: Boolean(selectedVillageId) });
+  useRealtimeTable({ table: 'refunds', onChange: scheduleAccountingRefresh, enabled: Boolean(selectedVillageId) });
+  useRealtimeTable({
+    table: 'reservations',
+    filter: selectedVillageId ? `village_id=eq.${selectedVillageId}` : undefined,
+    onChange: scheduleAccountingRefresh,
+    enabled: Boolean(selectedVillageId)
+  });
 
   // Auditing Action: VERIFY PAYMENT
   const handleVerifyPayment = async (payId, reservationId, propertyId) => {
@@ -470,7 +562,11 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
       setOrNumber('');
       setNotes('');
       setSelectedPayment(null);
-      fetchPayments(selectedVillageId);
+      fetchPayments(selectedVillageId, {
+        showLoading: false,
+        reconcile: false,
+        clearOnError: false
+      });
     } catch (err) {
       alert(err.message || 'Audit verification failed.');
     } finally {
@@ -496,7 +592,11 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
 
       setRejectionReason('');
       setSelectedPayment(null);
-      fetchPayments(selectedVillageId);
+      fetchPayments(selectedVillageId, {
+        showLoading: false,
+        reconcile: false,
+        clearOnError: false
+      });
     } catch (err) {
       alert(err.message || 'Rejection audit failed.');
     } finally {
@@ -717,6 +817,10 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <span className="inline-flex h-10 items-center gap-2 self-start rounded-full border border-[#d8e1dd] bg-white px-3 text-[10px] font-extrabold uppercase tracking-wider text-[#66756e] sm:self-end">
+              <span className={`h-2 w-2 rounded-full ${accountingRealtimeStatus === 'connected' ? 'bg-emerald-500' : accountingRealtimeStatus === 'error' ? 'bg-rose-500' : 'bg-amber-400'}`} />
+              {accountingRealtimeStatus === 'connected' ? 'Live sync' : accountingRealtimeStatus === 'error' ? 'Sync error' : 'Connecting'}
+            </span>
             <label className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-[#66756e]">
               <span className="mb-1.5 flex items-center gap-1.5">
                 <Building2 className="h-3.5 w-3.5 text-[#16835f]" />
@@ -933,7 +1037,7 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
                 Customer Documents
               </h3>
               <p className="mt-1 text-xs text-slate-500">
-                Approve required documents before verifying a customer&apos;s first payment.
+                Open and inspect each uploaded file before approving or rejecting it.
               </p>
             </div>
             <span className="rounded-full border border-slate-800 bg-slate-950/50 px-3 py-1 text-[10px] font-extrabold uppercase text-slate-500">
@@ -972,9 +1076,7 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
                         <span className="text-[10px] text-slate-500">{reservation.profiles?.email || reservation.guest_email || 'No email'}</span>
                       </td>
                       <td className="py-3.5 px-2">
-                        <a href={document.file_url} target="_blank" rel="noreferrer" className="font-bold text-emerald-400 hover:text-emerald-300">
-                          {document.document_type}
-                        </a>
+                        <span className="font-bold text-emerald-400">{document.document_type}</span>
                         {document.rejection_reason && <span className="mt-1 block text-[10px] text-red-400">{document.rejection_reason}</span>}
                       </td>
                       <td className="py-3.5 px-2">
@@ -996,32 +1098,14 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
                         </span>
                       </td>
                       <td className="py-3.5 px-2 text-right">
-                        {document.status === 'pending' ? (
-                          <div className="flex justify-end gap-2">
-                            <button
-                              type="button"
-                              disabled={reviewingDocumentId === document.id}
-                              onClick={() => handleReviewDocument(document, 'approved')}
-                              className="inline-flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-1.5 text-[10px] font-extrabold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                              Approve
-                            </button>
-                            <button
-                              type="button"
-                              disabled={reviewingDocumentId === document.id}
-                              onClick={() => handleReviewDocument(document, 'rejected')}
-                              className="inline-flex items-center gap-1 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-1.5 text-[10px] font-extrabold text-red-400 transition hover:bg-red-500/20 disabled:opacity-50"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                              Reject
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] text-slate-500 font-semibold select-none italic">
-                            Reviewed
-                          </span>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => openDocumentReview(document)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-[#cfdcd6] bg-white px-3 py-1.5 text-[10px] font-extrabold text-[#176b50] transition hover:border-emerald-300 hover:bg-emerald-50"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          {document.status === 'pending' ? 'Review Document' : 'View Review'}
+                        </button>
                       </td>
                     </tr>
                   );
@@ -1444,6 +1528,221 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
                 </button>
               </div>
             </div>
+        </div>
+        )}
+
+        {view === 'documents' && selectedDocument && (
+          <div className="fixed inset-0 z-[130] bg-[#17211d]/35 backdrop-blur-[2px]">
+            <button
+              type="button"
+              aria-label="Close document review"
+              onClick={closeDocumentReview}
+              className="absolute inset-0 h-full w-full cursor-default"
+            />
+            <aside className="absolute inset-y-0 right-0 z-10 flex w-full flex-col bg-[#f7faf8] shadow-2xl sm:max-w-2xl">
+              <header className="flex items-start justify-between border-b border-[#dfe6e2] bg-white px-5 py-4 sm:px-6">
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-emerald-700">
+                    Accounting Document Review
+                  </p>
+                  <h2 className="mt-1 text-xl font-extrabold text-[#17211d]">
+                    {selectedDocument.document_type}
+                  </h2>
+                  <p className="mt-1 text-xs text-[#66756e]">
+                    Inspect the uploaded file before making a decision.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeDocumentReview}
+                  disabled={Boolean(reviewingDocumentId)}
+                  className="rounded-xl border border-[#d7e1dc] bg-white p-2 text-[#52635b] transition hover:bg-[#f1f6f3] disabled:opacity-50"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </header>
+
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
+                {(() => {
+                  const reservation = selectedDocument.reservations || {};
+                  const property = reservation.properties || {};
+                  const customerName = reservation.profiles?.full_name || reservation.guest_name || 'Guest Buyer';
+                  const customerEmail = reservation.profiles?.email || reservation.guest_email || 'No email provided';
+
+                  return (
+                    <>
+                      <section className="grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-xl border border-[#dfe6e2] bg-white p-4">
+                          <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#75847d]">Customer</p>
+                          <p className="mt-1 text-sm font-extrabold text-[#17211d]">{customerName}</p>
+                          <p className="mt-1 text-xs text-[#66756e]">{customerEmail}</p>
+                        </div>
+                        <div className="rounded-xl border border-[#dfe6e2] bg-white p-4">
+                          <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#75847d]">Property</p>
+                          <p className="mt-1 text-sm font-extrabold text-[#17211d]">{property.villages?.name || 'Village'}</p>
+                          <p className="mt-1 text-xs text-[#66756e]">Block {property.block_number || '-'}, Lot {property.lot_number || '-'}</p>
+                        </div>
+                      </section>
+
+                      <section className="overflow-hidden rounded-2xl border border-[#d7e1dc] bg-white shadow-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e3eae6] px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+                              <FileText className="h-4 w-4" />
+                            </span>
+                            <div>
+                              <p className="text-sm font-extrabold text-[#17211d]">Uploaded document</p>
+                              <p className="text-[11px] text-[#66756e]">
+                                Uploaded {formatDate(selectedDocument.uploaded_at)}
+                              </p>
+                            </div>
+                          </div>
+                          <a
+                            href={selectedDocument.file_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-[#cfdcd6] bg-white px-3 py-2 text-xs font-extrabold text-[#176b50] transition hover:bg-emerald-50"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                            Open Original
+                          </a>
+                        </div>
+                        <div className="h-[48vh] min-h-80 bg-[#eef3f0] p-3">
+                          <object
+                            data={selectedDocument.file_url}
+                            className="h-full w-full rounded-xl bg-white"
+                            aria-label={`${selectedDocument.document_type} preview`}
+                          >
+                            <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+                              <FileText className="h-10 w-10 text-[#8aa097]" />
+                              <p className="text-sm font-bold text-[#52635b]">Preview is not available for this file.</p>
+                              <a href={selectedDocument.file_url} target="_blank" rel="noreferrer" className="text-xs font-extrabold text-emerald-700">
+                                Open the original document
+                              </a>
+                            </div>
+                          </object>
+                        </div>
+                      </section>
+
+                      <section className="rounded-xl border border-[#dfe6e2] bg-white p-4">
+                        <p className="text-xs font-extrabold uppercase tracking-wider text-[#52635b]">Review checklist</p>
+                        <div className="mt-3 grid gap-2 text-xs text-[#52635b] sm:grid-cols-3">
+                          <span className="rounded-lg bg-[#f2f7f4] px-3 py-2">File is clear and readable</span>
+                          <span className="rounded-lg bg-[#f2f7f4] px-3 py-2">Details match the customer</span>
+                          <span className="rounded-lg bg-[#f2f7f4] px-3 py-2">Document appears complete</span>
+                        </div>
+                      </section>
+
+                      {selectedDocument.status !== 'pending' && (
+                        <section className={`rounded-xl border p-4 ${
+                          selectedDocument.status === 'approved'
+                            ? 'border-emerald-200 bg-emerald-50'
+                            : 'border-rose-200 bg-rose-50'
+                        }`}>
+                          <p className="text-xs font-extrabold uppercase tracking-wider text-[#52635b]">
+                            Review result: {selectedDocument.status}
+                          </p>
+                          <p className="mt-1 text-xs text-[#66756e]">
+                            Reviewed {selectedDocument.reviewed_at ? formatDate(selectedDocument.reviewed_at) : 'previously'}
+                          </p>
+                          {selectedDocument.rejection_reason && (
+                            <p className="mt-3 rounded-lg bg-white/80 p-3 text-sm font-semibold text-rose-700">
+                              {selectedDocument.rejection_reason}
+                            </p>
+                          )}
+                        </section>
+                      )}
+
+                      {selectedDocument.status === 'pending' && documentReviewDecision === 'rejected' && (
+                        <section className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+                          <label className="text-xs font-extrabold uppercase tracking-wider text-rose-800">
+                            Reason for rejection
+                          </label>
+                          <textarea
+                            rows={4}
+                            value={documentRejectionReason}
+                            onChange={(event) => setDocumentRejectionReason(event.target.value)}
+                            placeholder="Explain what is invalid, unclear, expired, or missing."
+                            className="mt-2 w-full resize-none rounded-xl border border-rose-200 bg-white px-3 py-2.5 text-sm text-[#17211d] outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-200"
+                          />
+                          <p className="mt-2 text-xs text-rose-700">This reason will be shown to the customer.</p>
+                        </section>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+
+              <footer className="border-t border-[#dfe6e2] bg-white p-4 sm:px-6">
+                {selectedDocument.status === 'pending' ? (
+                  <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <button
+                      type="button"
+                      onClick={closeDocumentReview}
+                      disabled={Boolean(reviewingDocumentId)}
+                      className="rounded-xl border border-[#d7e1dc] bg-white px-4 py-2.5 text-xs font-extrabold text-[#52635b] transition hover:bg-[#f1f6f3] disabled:opacity-50"
+                    >
+                      Close
+                    </button>
+                    {documentReviewDecision === 'rejected' ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDocumentReviewDecision('');
+                            setDocumentRejectionReason('');
+                          }}
+                          disabled={Boolean(reviewingDocumentId)}
+                          className="rounded-xl border border-[#d7e1dc] bg-white px-4 py-2.5 text-xs font-extrabold text-[#52635b] disabled:opacity-50"
+                        >
+                          Cancel Rejection
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleReviewDocument('rejected')}
+                          disabled={Boolean(reviewingDocumentId)}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-xs font-extrabold text-white transition hover:bg-rose-500 disabled:opacity-50"
+                        >
+                          {reviewingDocumentId ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                          Confirm Rejection
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setDocumentReviewDecision('rejected')}
+                          disabled={Boolean(reviewingDocumentId)}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-extrabold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
+                        >
+                          <X className="h-4 w-4" />
+                          Reject Document
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleReviewDocument('approved')}
+                          disabled={Boolean(reviewingDocumentId)}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-extrabold text-white transition hover:bg-emerald-500 disabled:opacity-50"
+                        >
+                          {reviewingDocumentId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                          Approve Document
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={closeDocumentReview}
+                      className="rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-extrabold text-white transition hover:bg-emerald-500"
+                    >
+                      Done
+                    </button>
+                  </div>
+                )}
+              </footer>
+            </aside>
           </div>
         )}
 

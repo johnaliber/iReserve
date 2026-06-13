@@ -67,7 +67,7 @@ const villageAdminNav = [
   { title: 'Reports', href: '/village-admin/reports', icon: BarChart3 },
   { title: 'Blueprint Preview', href: '/village-admin/blueprint-preview', icon: Map },
   { title: 'Audit Logs', href: '/village-admin/audit-logs', icon: FileClock },
-  { title: 'Settings', href: '/village-admin/settings', icon: Settings }
+  // { title: 'Settings', href: '/village-admin/settings', icon: Settings }
 ];
 
 const accountingNav = [

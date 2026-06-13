@@ -148,6 +148,9 @@ CREATE TABLE public.property_type_presets (
     sunlight_exposure TEXT NOT NULL DEFAULT 'balanced' CHECK (sunlight_exposure IN ('morning', 'afternoon', 'balanced', 'limited')),
     thumbnail_url TEXT,
     floor_plan_url TEXT,
+    house_images JSONB NOT NULL DEFAULT '[]'::jsonb,
+    show_in_public_gallery BOOLEAN NOT NULL DEFAULT TRUE,
+    gallery_order INT NOT NULL DEFAULT 0,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
@@ -583,6 +586,7 @@ CREATE POLICY properties_read_admin ON public.properties FOR SELECT TO authentic
 CREATE POLICY property_type_presets_super_admin ON public.property_type_presets FOR ALL TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 CREATE POLICY property_type_presets_admin_all ON public.property_type_presets FOR ALL TO authenticated USING (public.has_village_role(village_id, 'village_admin')) WITH CHECK (public.has_village_role(village_id, 'village_admin'));
 CREATE POLICY property_type_presets_read_staff ON public.property_type_presets FOR SELECT TO authenticated USING (public.has_village_access(village_id));
+CREATE POLICY property_type_presets_public_gallery ON public.property_type_presets FOR SELECT TO anon, authenticated USING (is_active = TRUE AND show_in_public_gallery = TRUE);
 
 -- --- property_images POLICIES ---
 CREATE POLICY property_images_super_admin ON public.property_images FOR ALL TO authenticated USING (public.is_super_admin());
