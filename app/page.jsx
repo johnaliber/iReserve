@@ -117,12 +117,9 @@ export default async function HomePage() {
             </div>
           </div>
           <div className="relative overflow-hidden rounded-[2rem] border border-emerald-100 bg-white p-3 shadow-2xl shadow-emerald-900/10">
-            <img src={displayedVillages[0].hero_image_url} alt="Village homes" className="h-[420px] w-full rounded-[1.4rem] object-cover" />
+            <img src={displayedVillages[0].hero_image_url} alt="Village homes" className="h-105 w-full rounded-[1.4rem] object-cover" />
             <div className="absolute bottom-8 left-8 right-8 rounded-2xl border border-white/60 bg-white/90 p-4 shadow-xl backdrop-blur">
-              <div className="flex items-center gap-3">
-                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-600 text-white"><Home className="h-5 w-5" /></span>
-                <div><p className="font-extrabold">Find your lot visually</p><p className="text-xs text-[#64748b]">Green means available and ready to view.</p></div>
-              </div>
+              
             </div>
           </div>
         </section>

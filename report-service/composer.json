@@ -1,0 +1,22 @@
+{
+  "name": "ireserve/report-service",
+  "description": "Paperdoc-backed report rendering service for iReserve.",
+  "type": "project",
+  "require": {
+    "php": "^8.2",
+    "paperdoc-dev/paperdoc-lib": "^0.8.2"
+  },
+  "autoload": {
+    "psr-4": {
+      "IReserve\\Reports\\": "src/"
+    }
+  },
+  "scripts": {
+    "post-install-cmd": [
+      "@php scripts/patch-paperdoc-table-rows.php"
+    ],
+    "post-update-cmd": [
+      "@php scripts/patch-paperdoc-table-rows.php"
+    ]
+  }
+}

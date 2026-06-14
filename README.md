@@ -94,6 +94,19 @@ npm run dev
 
 Open your browser and navigate to `http://localhost:3000` to interact with iReserve!
 
+### Paperdoc Report Service
+
+Administrative PDF, XLSX, and CSV exports are rendered by the PHP 8.2
+Paperdoc service in `report-service/`.
+
+```bash
+docker compose -f docker-compose.reports.yml up --build
+```
+
+Configure `REPORT_SERVICE_URL` and use the same strong
+`REPORT_SERVICE_SECRET` for Next.js and the report service. See
+`report-service/README.md` for local PHP and deployment details.
+
 ---
 
 ## 👥 Roles for Manual Verification

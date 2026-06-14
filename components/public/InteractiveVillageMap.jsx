@@ -668,22 +668,20 @@ export default function InteractiveVillageMap({
 
   return (
     <div className="w-full">
-      <div className="mb-3 flex justify-end">
-        <span className="inline-flex items-center gap-2 rounded-full border border-[#dbe4ee] bg-white px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-[#64748b]">
-          <span className={`h-2 w-2 rounded-full ${
-            propertyRealtimeStatus === 'connected' && blueprintRealtimeStatus === 'connected'
-              ? 'bg-emerald-500'
-              : propertyRealtimeStatus === 'error' || blueprintRealtimeStatus === 'error'
+      {!(propertyRealtimeStatus === 'connected' && blueprintRealtimeStatus === 'connected') && (
+        <div className="mb-3 flex justify-end">
+          <span className="inline-flex items-center gap-2 rounded-full border border-[#dbe4ee] bg-white px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-[#64748b]">
+            <span className={`h-2 w-2 rounded-full ${
+              propertyRealtimeStatus === 'error' || blueprintRealtimeStatus === 'error'
                 ? 'bg-rose-500'
                 : 'bg-amber-400'
-          }`} />
-          {propertyRealtimeStatus === 'connected' && blueprintRealtimeStatus === 'connected'
-            ? 'Live sync'
-            : propertyRealtimeStatus === 'error' || blueprintRealtimeStatus === 'error'
+            }`} />
+            {propertyRealtimeStatus === 'error' || blueprintRealtimeStatus === 'error'
               ? 'Sync error'
               : 'Connecting'}
-        </span>
-      </div>
+          </span>
+        </div>
+      )}
       {!adminPropertyMode && (
         <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
           Click a green lot to view details and start your reservation.

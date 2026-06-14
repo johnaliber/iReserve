@@ -859,10 +859,12 @@ export default function BlueprintEditor({ blueprintId, villageId }) {
               <span className="truncate font-bold text-slate-900">{blueprint?.name}</span>
             </span>
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe4ee] bg-white px-2.5 py-1 text-[10px] font-bold text-[#64748b]">
-                <span className={`h-2 w-2 rounded-full ${realtimeStatus === 'connected' ? 'bg-emerald-500' : realtimeStatus === 'error' ? 'bg-rose-500' : 'bg-amber-400'}`} />
-                {realtimeStatus === 'connected' ? 'Live sync' : realtimeStatus === 'error' ? 'Sync error' : 'Connecting'}
-              </span>
+              {realtimeStatus !== 'connected' && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe4ee] bg-white px-2.5 py-1 text-[10px] font-bold text-[#64748b]">
+                  <span className={`h-2 w-2 rounded-full ${realtimeStatus === 'error' ? 'bg-rose-500' : 'bg-amber-400'}`} />
+                  {realtimeStatus === 'error' ? 'Sync error' : 'Connecting'}
+                </span>
+              )}
               <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-700">
                 {blueprint?.status}
               </span>

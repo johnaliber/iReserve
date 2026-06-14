@@ -275,10 +275,12 @@ export default function CustomerDashboardPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
-            <span className="inline-flex items-center gap-2 rounded-full border border-[#dbe4ee] bg-white px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-[#64748b]">
-              <span className={`h-2 w-2 rounded-full ${reservationRealtimeStatus === 'connected' ? 'bg-emerald-500' : reservationRealtimeStatus === 'error' ? 'bg-rose-500' : 'bg-amber-400'}`} />
-              {reservationRealtimeStatus === 'connected' ? 'Live sync' : reservationRealtimeStatus === 'error' ? 'Sync error' : 'Connecting'}
-            </span>
+            {reservationRealtimeStatus !== 'connected' && (
+              <span className="inline-flex items-center gap-2 rounded-full border border-[#dbe4ee] bg-white px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-[#64748b]">
+                <span className={`h-2 w-2 rounded-full ${reservationRealtimeStatus === 'error' ? 'bg-rose-500' : 'bg-amber-400'}`} />
+                {reservationRealtimeStatus === 'error' ? 'Sync error' : 'Connecting'}
+              </span>
+            )}
             <Link
               href="/villages"
               className="flex items-center gap-1 rounded-xl bg-emerald-500 px-4 py-2.5 text-xs font-bold text-slate-950 shadow transition hover:bg-emerald-400"

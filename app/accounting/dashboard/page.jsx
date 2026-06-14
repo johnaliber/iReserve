@@ -817,10 +817,12 @@ export default function AccountingDashboardPage({ view = 'dashboard' }) {
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <span className="inline-flex h-10 items-center gap-2 self-start rounded-full border border-[#d8e1dd] bg-white px-3 text-[10px] font-extrabold uppercase tracking-wider text-[#66756e] sm:self-end">
-              <span className={`h-2 w-2 rounded-full ${accountingRealtimeStatus === 'connected' ? 'bg-emerald-500' : accountingRealtimeStatus === 'error' ? 'bg-rose-500' : 'bg-amber-400'}`} />
-              {accountingRealtimeStatus === 'connected' ? 'Live sync' : accountingRealtimeStatus === 'error' ? 'Sync error' : 'Connecting'}
-            </span>
+            {accountingRealtimeStatus !== 'connected' && (
+              <span className="inline-flex h-10 items-center gap-2 self-start rounded-full border border-[#d8e1dd] bg-white px-3 text-[10px] font-extrabold uppercase tracking-wider text-[#66756e] sm:self-end">
+                <span className={`h-2 w-2 rounded-full ${accountingRealtimeStatus === 'error' ? 'bg-rose-500' : 'bg-amber-400'}`} />
+                {accountingRealtimeStatus === 'error' ? 'Sync error' : 'Connecting'}
+              </span>
+            )}
             <label className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-[#66756e]">
               <span className="mb-1.5 flex items-center gap-1.5">
                 <Building2 className="h-3.5 w-3.5 text-[#16835f]" />

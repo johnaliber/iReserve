@@ -1,5 +1,12 @@
-import AdminPlaceholderPage from '@/components/admin/AdminPlaceholderPage';
+import DashboardShell from '@/components/layout/DashboardShell';
+import ReportCenter from '@/components/reports/ReportCenter';
 
 export default function AccountingReportsPage() {
-  return <AdminPlaceholderPage title="Financial Reports" description="Review accounting reports for reservation payments, refunds, and booking audit." />;
+  return (
+    <DashboardShell>
+      <div className="mx-auto max-w-[1700px]">
+        <ReportCenter accountingOnly />
+      </div>
+    </DashboardShell>
+  );
 }

@@ -362,10 +362,12 @@ export default function AdminAnalyticsDashboard({ scope = 'global' }) {
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <span className="inline-flex h-10 items-center gap-2 self-start rounded-full border border-[#dbe4ee] bg-white px-3 text-[10px] font-extrabold uppercase tracking-wider text-[#64748b] sm:self-end">
-              <span className={`h-2 w-2 rounded-full ${reservationRealtimeStatus === 'connected' ? 'bg-emerald-500' : reservationRealtimeStatus === 'error' ? 'bg-rose-500' : 'bg-amber-400'}`} />
-              {reservationRealtimeStatus === 'connected' ? 'Live sync' : reservationRealtimeStatus === 'error' ? 'Sync error' : 'Connecting'}
-            </span>
+            {reservationRealtimeStatus !== 'connected' && (
+              <span className="inline-flex h-10 items-center gap-2 self-start rounded-full border border-[#dbe4ee] bg-white px-3 text-[10px] font-extrabold uppercase tracking-wider text-[#64748b] sm:self-end">
+                <span className={`h-2 w-2 rounded-full ${reservationRealtimeStatus === 'error' ? 'bg-rose-500' : 'bg-amber-400'}`} />
+                {reservationRealtimeStatus === 'error' ? 'Sync error' : 'Connecting'}
+              </span>
+            )}
             <label className="text-xs font-extrabold uppercase tracking-wider text-[#64748b]">
               <span className="mb-1.5 block">Village Community</span>
               <select

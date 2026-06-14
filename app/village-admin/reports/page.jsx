@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import DashboardShell from '@/components/layout/DashboardShell';
+import ReportCenter from '@/components/reports/ReportCenter';
 import { getManageableVillages } from '@/lib/villages/getManageableVillages';
 import { 
   BarChart as BarIcon, 
@@ -296,6 +297,9 @@ export default function VillageAdminReportsPage() {
 
         </div>
 
+        <div className="rounded-3xl  p-4 text-[#24332c] md:p-6">
+          <ReportCenter />
+        </div>
       </div>
     </DashboardShell>
   );

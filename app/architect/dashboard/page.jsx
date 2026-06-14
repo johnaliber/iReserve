@@ -96,7 +96,6 @@ export default function ArchitectDashboardPage() {
   const [creating, setCreating] = useState(false);
   const [deletingBlueprintId, setDeletingBlueprintId] = useState('');
   const [previewVersion, setPreviewVersion] = useState(0);
-  const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
@@ -219,7 +218,6 @@ export default function ArchitectDashboardPage() {
         }
         return nextRows[0]?.village.id || '';
       });
-      setLastSyncedAt(new Date());
     } catch (err) {
       console.error('Error loading architect dashboard:', err);
       setError(err.message || 'Unable to load the architect dashboard.');
@@ -249,11 +247,10 @@ export default function ArchitectDashboardPage() {
 
   const refreshArchitectPreview = useCallback(() => {
     setPreviewVersion((version) => version + 1);
-    setLastSyncedAt(new Date());
     fetchArchitectData({ showLoading: false });
   }, [fetchArchitectData]);
   const scheduleArchitectRefresh = useRealtimeRefresh(refreshArchitectPreview, 250);
-  useRealtimeBlueprint({
+  const blueprintRealtimeStatus = useRealtimeBlueprint({
     blueprintId: selectedRow?.blueprint?.id,
     onBlueprintChange: scheduleArchitectRefresh,
     onObjectChange: scheduleArchitectRefresh
@@ -502,14 +499,18 @@ export default function ArchitectDashboardPage() {
                     </p>
                   </div>
 
-                  <div className="flex w-fit items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-[10px] font-extrabold text-emerald-700">
-                    <span className="relative flex h-2.5 w-2.5">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
-                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                    </span>
-                    Live sync
-                    {lastSyncedAt && ` - ${lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
-                  </div>
+                  {blueprintRealtimeStatus !== 'connected' && (
+                    <div className={`flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-extrabold ${
+                      blueprintRealtimeStatus === 'error'
+                        ? 'border-rose-100 bg-rose-50 text-rose-700'
+                        : 'border-amber-100 bg-amber-50 text-amber-700'
+                    }`}>
+                      <span className={`h-2.5 w-2.5 rounded-full ${
+                        blueprintRealtimeStatus === 'error' ? 'bg-rose-500' : 'bg-amber-400'
+                      }`} />
+                      {blueprintRealtimeStatus === 'error' ? 'Sync error' : 'Connecting'}
+                    </div>
+                  )}
                 </div>
 
                 {selectedRow.blueprint && selectedRow.village.slug ? (
