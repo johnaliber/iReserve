@@ -5,6 +5,10 @@ import { claimGuestReservationsForUser } from '@/lib/reservations/claimGuestRese
 export async function GET(request) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get('code');
+  const next = requestUrl.searchParams.get('next');
+  const destination = next?.startsWith('/') && !next.startsWith('//')
+    ? next
+    : '/customer/dashboard';
 
   if (code) {
     const supabase = await createClient();
@@ -18,6 +22,5 @@ export async function GET(request) {
     }
   }
 
-  // URL to redirect to after sign in process completes
-  return NextResponse.redirect(requestUrl.origin);
+  return NextResponse.redirect(new URL(destination, requestUrl.origin));
 }

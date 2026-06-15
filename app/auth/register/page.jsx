@@ -61,6 +61,7 @@ export default function RegisterPage() {
         email,
         password,
         options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=/customer/dashboard`,
           data: {
             full_name: fullName,
             phone,
@@ -86,11 +87,6 @@ export default function RegisterPage() {
 
       setSuccess(true);
       setLoading(false);
-
-      // Redirect to login page after 2 seconds
-      setTimeout(() => {
-        router.push('/auth/login');
-      }, 2000);
     } catch (err) {
       console.error(err);
       setError('An unexpected error occurred. Please try again.');
@@ -121,7 +117,7 @@ export default function RegisterPage() {
 
         {success ? (
           <div className="p-6 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-center text-sm font-medium">
-            Account created successfully! Redirecting you to login...
+            Account created. Check your email and click Verify Account to activate your account.
           </div>
         ) : (
           <>

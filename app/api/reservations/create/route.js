@@ -428,7 +428,9 @@ export async function POST(request) {
         message: customerMessage,
         type: 'reservation_pending',
         userName: reservationFullName,
-        actionUrl: `/auth/register?email=${encodeURIComponent(reservationEmail)}`
+        actionUrl: `/auth/register?email=${encodeURIComponent(reservationEmail)}`,
+        actionLabel: 'Verify Account',
+        actionHelpText: 'Create your iReserve account, then use the verification email sent to this address to activate it.'
       });
       await sendEmail({
         to: reservationEmail,
