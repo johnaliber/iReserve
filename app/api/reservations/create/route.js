@@ -36,6 +36,15 @@ function fallbackRef() {
   return `REF-${Math.floor(Math.random() * 1000000)}`;
 }
 
+function requestOrigin(request) {
+  const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim();
+  const forwardedProtocol = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
+  if (forwardedHost) {
+    return `${forwardedProtocol || 'https'}://${forwardedHost}`;
+  }
+  return new URL(request.url).origin;
+}
+
 export async function POST(request) {
   const supabase = await createClient();
   const admin = createAdminClient();
@@ -430,7 +439,8 @@ export async function POST(request) {
         userName: reservationFullName,
         actionUrl: `/auth/register?email=${encodeURIComponent(reservationEmail)}`,
         actionLabel: 'Verify Account',
-        actionHelpText: 'Create your iReserve account, then use the verification email sent to this address to activate it.'
+        actionHelpText: 'Create your iReserve account, then use the verification email sent to this address to activate it.',
+        appUrl: requestOrigin(request)
       });
       await sendEmail({
         to: reservationEmail,
