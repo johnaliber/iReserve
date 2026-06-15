@@ -7,8 +7,6 @@ import {
   getInterestRateForTerm,
   roundMoney
 } from '@/lib/payments/paymentMath';
-import { mkdir, writeFile } from 'fs/promises';
-import path from 'path';
 import { logAuditEvent } from '@/lib/audit/logAuditEvent';
 import {
   getAccountingRecipients,
@@ -18,6 +16,10 @@ import {
 import { sendEmail } from '@/lib/email/sendEmail';
 import { notificationEmail } from '@/lib/email/templates/notificationEmail';
 import { createNotification, createNotifications } from '@/lib/notifications/createNotification';
+import {
+  reservationFileUrl,
+  validateReservationFileReference
+} from '@/lib/storage/reservationFiles';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -34,67 +36,10 @@ function fallbackRef() {
   return `REF-${Math.floor(Math.random() * 1000000)}`;
 }
 
-function safeSegment(value, fallback = 'Uploader') {
-  return String(value || fallback)
-    .normalize('NFKD')
-    .replace(/[^\w\s.-]/g, '')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .slice(0, 80) || fallback;
-}
-
-async function readPayload(request) {
-  const contentType = request.headers.get('content-type') || '';
-  if (!contentType.includes('multipart/form-data')) {
-    return {
-      fields: await request.json(),
-      files: {}
-    };
-  }
-
-  const formData = await request.formData();
-  return {
-    fields: Object.fromEntries([...formData.entries()].filter(([, value]) => typeof value === 'string')),
-    files: {
-      receiptFile: formData.get('receiptFile'),
-      validIdFile: formData.get('validIdFile'),
-      incomeProofFile: formData.get('incomeProofFile')
-    }
-  };
-}
-
-async function saveRequiredDocument(file, uploaderName, documentLabel) {
-  if (!(file instanceof File) || file.size === 0) {
-    throw new Error(`${documentLabel} is required before reserving a property.`);
-  }
-
-  const maxBytes = 10 * 1024 * 1024;
-  if (file.size > maxBytes) {
-    throw new Error(`${documentLabel} must be 10MB or smaller.`);
-  }
-
-  const allowedTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
-  if (file.type && !allowedTypes.has(file.type)) {
-    throw new Error(`${documentLabel} must be a PDF, JPG, PNG, or WebP file.`);
-  }
-
-  const safeUploader = safeSegment(uploaderName);
-  const safeOriginalName = safeSegment(file.name || `${documentLabel}.pdf`, `${documentLabel}.pdf`);
-  const fileName = `${Date.now()}-${crypto.randomUUID()}-${safeOriginalName}`;
-  const relativeFolder = path.join('Orchard', safeUploader, 'Documents');
-  const absoluteFolder = path.join(process.cwd(), 'public', relativeFolder);
-
-  await mkdir(absoluteFolder, { recursive: true });
-  const buffer = Buffer.from(await file.arrayBuffer());
-  await writeFile(path.join(absoluteFolder, fileName), buffer);
-
-  return `/${relativeFolder.replaceAll(path.sep, '/')}/${fileName}`;
-}
-
 export async function POST(request) {
   const supabase = await createClient();
   const admin = createAdminClient();
-  const { fields: body, files } = await readPayload(request);
+  const body = await request.json();
 
   const {
     propertyId,
@@ -104,8 +49,9 @@ export async function POST(request) {
     address,
     paymentMethod,
     receiptRef,
-    validIdUrl,
-    incomeProofUrl,
+    receiptFile,
+    validIdFile,
+    incomeProofFile,
     paymentType = 'partial_payment',
     downpaymentAmount,
     downpaymentPercentage = 20,
@@ -208,30 +154,40 @@ export async function POST(request) {
     }
   }
 
-  let savedValidIdUrl = validIdUrl;
-  let savedIncomeProofUrl = incomeProofUrl;
-  let savedReceiptUrl = '';
-
-  if (files.validIdFile || files.incomeProofFile) {
-    try {
-      savedValidIdUrl = await saveRequiredDocument(files.validIdFile, reservationFullName, 'Government ID');
-      savedIncomeProofUrl = await saveRequiredDocument(files.incomeProofFile, reservationFullName, 'Proof of Income');
-    } catch (err) {
-      return json(400, { error: err.message || 'Documents could not be uploaded.' });
+  let validIdReference;
+  let incomeProofReference;
+  let receiptReference = null;
+  try {
+    validIdReference = validateReservationFileReference('validId', validIdFile);
+    incomeProofReference = validateReservationFileReference('incomeProof', incomeProofFile);
+    if (receiptFile) {
+      receiptReference = validateReservationFileReference('receipt', receiptFile);
     }
-  }
 
-  if (!savedValidIdUrl || !savedIncomeProofUrl) {
-    return json(400, { error: 'Government ID and Proof of Income documents are required before reservation.' });
-  }
-
-  if (files.receiptFile instanceof File && files.receiptFile.size > 0) {
-    try {
-      savedReceiptUrl = await saveRequiredDocument(files.receiptFile, reservationFullName, 'Payment Receipt');
-    } catch (err) {
-      return json(400, { error: err.message || 'The payment receipt could not be uploaded.' });
+    const references = [validIdReference, incomeProofReference, receiptReference].filter(Boolean);
+    const checks = await Promise.all(references.map((reference) => (
+      admin.storage.from(reference.bucket).info(reference.path)
+    )));
+    if (checks.some(({ error }) => error)) {
+      return json(400, { error: 'One or more uploaded files could not be verified.' });
     }
+  } catch (err) {
+    return json(400, { error: err.message || 'Documents could not be verified.' });
   }
+
+  const savedValidIdUrl = reservationFileUrl(
+    validIdReference.bucket,
+    validIdReference.path,
+    validIdReference.accessToken
+  );
+  const savedIncomeProofUrl = reservationFileUrl(
+    incomeProofReference.bucket,
+    incomeProofReference.path,
+    incomeProofReference.accessToken
+  );
+  const savedReceiptUrl = receiptReference
+    ? reservationFileUrl(receiptReference.bucket, receiptReference.path, receiptReference.accessToken)
+    : '';
 
   const { data: property, error: propertyError } = await admin
     .from('properties')

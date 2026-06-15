@@ -31,6 +31,20 @@ import ReservationProgressSteps from '@/components/customer/ReservationProgressS
 import DelayedLoadingState from '@/components/shared/DelayedLoadingState';
 import HelpText from '@/components/shared/HelpText';
 
+async function readJsonResponse(response) {
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    return response.json();
+  }
+
+  const message = (await response.text()).trim();
+  return {
+    error: response.status === 413
+      ? 'The upload was too large for the server.'
+      : message || `The server returned an unexpected response (${response.status}).`
+  };
+}
+
 export default function ReservePropertyPage() {
   const router = useRouter();
   const { propertyId } = useParams();
@@ -235,29 +249,72 @@ export default function ReservePropertyPage() {
           : 'Please create an account first before paying more than the reservation fee.');
       }
 
-      const formData = new FormData();
-      formData.append('propertyId', property?.id || propertyId);
-      formData.append('fullName', fullName);
-      formData.append('email', email);
-      formData.append('phone', phone);
-      formData.append('address', address);
-      formData.append('paymentMethod', paymentMethod);
-      formData.append('paymentType', paymentType);
-      formData.append('downpaymentAmount', '');
-      formData.append('downpaymentPercentage', downpaymentPercentage);
-      formData.append('installmentTermMonths', installmentTermMonths);
-      formData.append('submittedAmount', String(submittedAmount));
-      formData.append('receiptRef', receiptRef);
-      if (receiptFile) formData.append('receiptFile', receiptFile);
-      formData.append('validIdFile', validIdFile);
-      formData.append('incomeProofFile', incomeProofFile);
+      const selectedFiles = [
+        { type: 'validId', file: validIdFile },
+        { type: 'incomeProof', file: incomeProofFile },
+        ...(receiptFile ? [{ type: 'receipt', file: receiptFile }] : [])
+      ];
+      const uploadPreparationResponse = await fetch('/api/reservations/uploads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          files: selectedFiles.map(({ type, file }) => ({
+            type,
+            name: file.name,
+            size: file.size,
+            contentType: file.type
+          }))
+        })
+      });
+      const uploadPreparation = await readJsonResponse(uploadPreparationResponse);
+      if (!uploadPreparationResponse.ok) {
+        throw new Error(uploadPreparation.error || 'Your files could not be prepared for upload.');
+      }
+
+      const uploadedFiles = {};
+      for (const upload of uploadPreparation.uploads) {
+        const selected = selectedFiles.find(({ type }) => type === upload.type);
+        const { error: uploadError } = await supabase.storage
+          .from(upload.bucket)
+          .uploadToSignedUrl(upload.path, upload.uploadToken, selected.file, {
+            contentType: selected.file.type,
+            upsert: false
+          });
+
+        if (uploadError) {
+          throw new Error(`${selected.file.name} could not be uploaded: ${uploadError.message}`);
+        }
+
+        uploadedFiles[upload.type] = {
+          bucket: upload.bucket,
+          path: upload.path,
+          accessToken: upload.accessToken
+        };
+      }
 
       const response = await fetch('/api/reservations/create', {
         method: 'POST',
-        body: formData
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          propertyId: property?.id || propertyId,
+          fullName,
+          email,
+          phone,
+          address,
+          paymentMethod,
+          paymentType,
+          downpaymentAmount: '',
+          downpaymentPercentage,
+          installmentTermMonths,
+          submittedAmount: String(submittedAmount),
+          receiptRef,
+          receiptFile: uploadedFiles.receipt || null,
+          validIdFile: uploadedFiles.validId,
+          incomeProofFile: uploadedFiles.incomeProof
+        })
       });
 
-      const payload = await response.json();
+      const payload = await readJsonResponse(response);
       if (!response.ok) {
         throw new Error(payload.error || 'Reservation could not be completed.');
       }
